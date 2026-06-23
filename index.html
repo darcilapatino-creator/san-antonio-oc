@@ -190,7 +190,6 @@ const CATS_SST=['Mano de Obra','Administrativo'];
 
 let currentUser=null,pinBuffer='',itemIdx=0,ocActual=null,ocGuardada=false;
 
-// ── AIRTABLE ──────────────────────────────────────────────────────
 async function atGet(){
   let all=[],offset=null;
   do{
@@ -216,7 +215,6 @@ async function atPatch(id,fields){
   return{_id:d.id,...d.fields};
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────
 const fmt=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0);
 const fmtD=iso=>iso?new Date(iso+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'—';
 const today=()=>new Date().toISOString().split('T')[0];
@@ -237,7 +235,6 @@ function prefAlerta(p){
   return`<div class="prefac-alert"><div class="prefac-alert-title"><i class="ti ti-alert-triangle"></i> Pre-facturas pendientes de factura definitiva</div>${p.map(o=>`<div class="prefac-item"><span><b>${o.consecutivo}</b> · ${o.proveedor}</span><span>Pagado: ${fmtD(o.fechaPago)}</span></div>`).join('')}</div>`;
 }
 
-// ── PIN ───────────────────────────────────────────────────────────
 document.querySelectorAll('.pin-key').forEach(k=>k.addEventListener('click',()=>{
   const v=k.dataset.k;
   if(v==='ok'){doLogin();return}
@@ -266,7 +263,6 @@ function init(rol){
   if(rol==='constructhor')renderCTH();
 }
 
-// ── CREADOR ───────────────────────────────────────────────────────
 function buildCreador(rol){
   const cats=(rol==='sst'?CATS_SST:CATS_ALL).map(c=>`<option>${c}</option>`).join('');
   document.getElementById('sc-'+rol).innerHTML=`
@@ -376,8 +372,8 @@ async function showMisOrdenes(rol){
     const misHtml=mis.map(function(o){
       const oid=o._id;
       const btn=o.estado==='Elaborada'
-        ?'<button class="btn btn-sm btn-primary" onclick="editarOC(\'' +rol+ '\',\'' +oid+ '\')"><i class="ti ti-pencil"></i> Editar</button>'
-        :'<button class="btn btn-sm" onclick="verDetalleResidente(\'' +rol+ '\',\'' +oid+ '\')"><i class="ti ti-eye"></i> Ver</button>';
+        ?'<button class="btn btn-sm btn-primary" onclick="editarOC(\''+rol+'\',\''+oid+'\')"><i class="ti ti-pencil"></i> Editar</button>'
+        :'<button class="btn btn-sm" onclick="verDetalleResidente(\''+rol+'\',\''+oid+'\')"><i class="ti ti-eye"></i> Ver</button>';
       return '<tr>'+
         '<td style="font-weight:600;color:var(--blue);font-family:var(--mono)">'+o.consecutivo+'</td>'+
         '<td>'+o.tipo+'</td><td>'+o.proveedor+'</td>'+
@@ -440,7 +436,6 @@ async function guardarOC(rol){
   const slink=document.getElementById(`${rol}-slink`).value||'';
   const rut=document.getElementById(`${rol}-rut`).value||'';
   const banco=document.getElementById(`${rol}-banco`).value||'';
-
   document.getElementById(`${rol}-saving`).style.display='flex';
   document.getElementById(`${rol}-msg`).style.display='none';
   try{
@@ -451,7 +446,7 @@ async function guardarOC(rol){
       const prefix=tipo==='Orden de Servicio'?'OS':'OC';
       const consec=`${prefix}-${new Date().getFullYear()}-${String(cnt).padStart(3,'0')}`;
       const fields={
-        consecutivo:consec, tipo, categoria:cat, proveedor:prov,
+        consecutivo:consec,tipo,categoria:cat,proveedor:prov,
         nit:document.getElementById(`${rol}-nit`).value||'',
         direccion:document.getElementById(`${rol}-dir`).value||'',
         telefono:document.getElementById(`${rol}-tel`).value||'',
@@ -460,18 +455,18 @@ async function guardarOC(rol){
         lugarEntrega:document.getElementById(`${rol}-lugar`).value||'',
         direccionEntrega:document.getElementById(`${rol}-dir2`).value||'',
         observaciones:document.getElementById(`${rol}-obs`).value||'',
-        tipoSoporte:sop, enlaceSoporte:slink, enlaceRut:rut, enlaceCertBancaria:banco,
+        tipoSoporte:sop,enlaceSoporte:slink,enlaceRut:rut,enlaceCertBancaria:banco,
         itemsJson:JSON.stringify(items),
-        totalBruto:bruto, iva, retefuente1:bruto*.04, retefuente2:bruto*.01,
+        totalBruto:bruto,iva,retefuente1:bruto*.04,retefuente2:bruto*.01,
         totalPagar:bruto+iva-bruto*.04-bruto*.01,
-        estado:'Elaborada', fechaCreacion:today(), creadoPor:rol,
-        comentariosJson:'[]', facturaDefinitivaRecibida:false,
-        entidadBancaria:'', tipoCuenta:'', numeroCuenta:''
+        estado:'Elaborada',fechaCreacion:today(),creadoPor:rol,
+        comentariosJson:'[]',facturaDefinitivaRecibida:false,
+        entidadBancaria:'',tipoCuenta:'',numeroCuenta:''
       };
       record=await atCreate(fields);
-      ocActual=record; ocGuardada=true;
+      ocActual=record;ocGuardada=true;
       document.getElementById(`${rol}-consec`).textContent=consec;
-    } else {
+    }else{
       record=await atPatch(ocActual._id,{
         itemsJson:JSON.stringify(items),totalBruto:bruto,iva,
         retefuente1:bruto*.04,retefuente2:bruto*.01,totalPagar:bruto+iva-bruto*.04-bruto*.01,
@@ -481,11 +476,10 @@ async function guardarOC(rol){
       ocActual=record;
     }
     const falt=[];if(!slink)falt.push('soporte');if(!rut)falt.push('RUT');if(!banco)falt.push('cert.bancaria');
-    showMsg(rol,`<i class="ti ti-check"></i> Orden <b>${ocActual.consecutivo}</b> guardada en Airtable.${falt.length?` Docs pendientes: ${falt.join(', ')}`:''}`, 'success');
+    showMsg(rol,`<i class="ti ti-check"></i> Orden <b>${ocActual.consecutivo}</b> guardada.${falt.length?` Docs pendientes: ${falt.join(', ')}`:'`}`,'success');
     document.getElementById(`${rol}-btn-env`).style.display='inline-flex';
   }catch(e){
     showMsg(rol,`<i class="ti ti-alert-triangle"></i> Error: ${e.message}`,'warning');
-    console.error(e);
   }
   document.getElementById(`${rol}-saving`).style.display='none';
 }
@@ -495,8 +489,6 @@ async function verDetalleResidente(rol,aid){
   document.getElementById(`${rol}-lista`).style.display='block';
   document.getElementById(`${rol}-lista-ct`).innerHTML=spin('Cargando...');
   const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
-  const coms=JSON.parse(o.comentariosJson||'[]');
-  const rechazos=coms.filter(c=>c.accion&&c.accion.includes('Rechazada'));
   var _rol=rol,_aid=aid;
   var accionesDiv=document.createElement('div');accionesDiv.className='card';
   var accionesInner=document.createElement('div');accionesInner.className='actions';
@@ -615,12 +607,11 @@ async function solicitarDO(rol){
     const coms=JSON.parse(ocActual.comentariosJson||'[]');
     coms.push({quien:RLBL[rol],accion:'Enviado a Director de Obra',fecha:today()});
     await atPatch(ocActual._id,{estado:'Pendiente aprobación Dir. Obra',comentariosJson:JSON.stringify(coms)});
-    showMsg(rol,`<i class="ti ti-send"></i> Solicitud enviada al Director de Obra.`,'warning');
+    showMsg(rol,'<i class="ti ti-send"></i> Solicitud enviada al Director de Obra.','warning');
     document.getElementById(`${rol}-btn-env`).style.display='none';
   }catch(e){alert('Error: '+e.message);}
 }
 
-// ── DIRECTOR OBRA ─────────────────────────────────────────────────
 async function renderDO(){
   document.getElementById('do-contenido').innerHTML=spin('Cargando órdenes...');
   try{
@@ -628,9 +619,9 @@ async function renderDO(){
     const pend=all.filter(o=>o.estado==='Pendiente aprobación Dir. Obra');
     const hist=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra'].includes(o.estado));
     const pfp=all.filter(o=>o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida&&mesPago(o.fechaPago)<mesActual());
-    document.getElementById('do-contenido').innerHTML=`
-    ${prefAlerta(pfp)}
-    <div class="card">
+    document.getElementById('do-contenido').innerHTML=
+    prefAlerta(pfp)+
+    `<div class="card">
       <div class="card-title"><i class="ti ti-clock"></i> Pendientes de aprobación (${pend.length})</div>
       ${pend.length?pend.map(o=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--gray2)">
@@ -651,7 +642,7 @@ async function renderDO(){
       <div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Comprobante</th></tr></thead>
       <tbody>${hist.map(function(o){var rid=o._id;return '<tr><td style="font-weight:600;color:var(--blue);font-family:var(--mono);cursor:pointer;text-decoration:underline" onclick="verDO(this.dataset.id)" data-id="'+rid+'">'+o.consecutivo+'</td><td>'+o.proveedor+'</td><td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td><td>'+(o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'—')+'</td><td>'+bdg(o.estado)+'</td><td>'+(o.comprobante?'<a href="'+o.comprobante+'" target="_blank" style="color:var(--blue);font-size:11px">Ver</a>':'—')+'</td></tr>';}).join('')}</tbody></table></div>`:''}
     </div>`;
-  }catch(e){document.getElementById('do-contenido').innerHTML=`<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Error cargando datos: ${e.message}</div>`;}
+  }catch(e){document.getElementById('do-contenido').innerHTML=`<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Error: ${e.message}</div>`;}
 }
 
 async function verDO(aid){
@@ -687,7 +678,6 @@ async function aprobDO(aid){
   }catch(e){alert('Error: '+e.message);document.getElementById('do-sav').style.display='none';}
 }
 
-// ── DIRECTOR PROYECTO ─────────────────────────────────────────────
 async function renderDP(){
   document.getElementById('dp-contenido').innerHTML=spin('Cargando...');
   try{
@@ -713,6 +703,7 @@ async function renderDP(){
     </div>`;
   }catch(e){document.getElementById('dp-contenido').innerHTML=`<div class="alert alert-warning">Error: ${e.message}</div>`;}
 }
+
 async function verDP(aid){
   document.getElementById('dp-contenido').innerHTML=spin('Cargando...');
   const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
@@ -745,6 +736,7 @@ async function aprobDP(aid){
     alert('Aprobado y enviado a Finanzas.');renderDP();
   }catch(e){alert('Error: '+e.message);document.getElementById('dp-sav').style.display='none';}
 }
+
 async function rechazar(aid,quien,label){
   const com=document.getElementById(`${quien}-com`)?.value||'(sin comentario)';
   try{
@@ -757,7 +749,6 @@ async function rechazar(aid,quien,label){
   }catch(e){alert('Error: '+e.message);}
 }
 
-// ── FINANZAS ──────────────────────────────────────────────────────
 async function renderFin(){
   document.getElementById('fin-contenido').innerHTML=spin('Cargando tabla de control...');
   try{
@@ -769,10 +760,10 @@ async function renderFin(){
     const saldo=xPag.reduce((s,o)=>s+(o.totalPagar||0),0);
     const sinB=xPag.filter(o=>!o.entidadBancaria).length;
     const vis=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado));
-    document.getElementById('fin-contenido').innerHTML=`
-    ${prefAlerta(pfp)}
-    ${sinB?`<div class="prefac-alert"><div class="prefac-alert-title"><i class="ti ti-building-bank"></i> ${sinB} orden(es) sin datos bancarios</div></div>`:''}
-    <div class="stat-grid">
+    document.getElementById('fin-contenido').innerHTML=
+    prefAlerta(pfp)+
+    (sinB?`<div class="prefac-alert"><div class="prefac-alert-title"><i class="ti ti-building-bank"></i> ${sinB} orden(es) sin datos bancarios</div></div>`:'')+
+    `<div class="stat-grid">
       <div class="stat-box"><div class="stat-label">En proceso</div><div class="stat-val" style="color:#534AB7">${enP.length}</div></div>
       <div class="stat-box"><div class="stat-label">Por pagar</div><div class="stat-val" style="color:var(--orange)">${xPag.length}</div></div>
       <div class="stat-box"><div class="stat-label">Saldo pendiente</div><div class="stat-val" style="font-size:15px;color:var(--red)">${fmt(saldo)}</div></div>
@@ -915,7 +906,6 @@ async function reportePagos(){
   const w=window.open('','_blank');w.document.write(html);w.document.close();setTimeout(()=>w.print(),500);
 }
 
-// ── CONSTRUCTHOR ──────────────────────────────────────────────────
 async function renderCTH(){
   document.getElementById('cth-contenido').innerHTML=spin('Cargando...');
   try{
@@ -966,7 +956,6 @@ async function renderCTH(){
   }catch(e){document.getElementById('cth-contenido').innerHTML=`<div class="alert alert-warning">Error: ${e.message}</div>`;}
 }
 
-// ── DETALLE ───────────────────────────────────────────────────────
 function detalle(o){
   const steps=['Elaborada','Dir. Obra','Dir. Proyecto','Finanzas','Pagada'];
   const sm={'Elaborada':0,'Pendiente aprobación Dir. Obra':1,'Pendiente aprobación Dir. Proyecto':2,'En proceso Finanzas':3,'Por pagar':3,'Pagada':4,'Rechazada':1};
