@@ -400,8 +400,8 @@ function renderTablaOrdenes(rol,ordenes){
   const misHtml=filtradas.map(function(o){
     const oid=o._id;
     const btn=o.estado==='Elaborada'
-      ?'<button class="btn btn-sm btn-primary" onclick="editarOC(''+rol+'',''+oid+'')"><i class="ti ti-pencil"></i> Editar</button>'
-      :'<button class="btn btn-sm" onclick="verDetalleResidente(''+rol+'',''+oid+'')"><i class="ti ti-eye"></i> Ver</button>';
+      ?'<button class="btn btn-sm btn-primary" onclick="editarOC(\''+rol+'\'\',\''+oid+'\'\')"><i class="ti ti-pencil"></i> Editar</button>'
+      :'<button class="btn btn-sm" onclick="verDetalleResidente(\''+rol+'\'\',\''+oid+'\'\')"><i class="ti ti-eye"></i> Ver</button>';
     return '<tr>'+
       '<td style="font-weight:600;color:var(--blue);font-family:var(--mono);font-size:11px">'+o.consecutivo+'</td>'+
       '<td>'+o.tipo+'</td><td>'+o.proveedor+'</td>'+
@@ -413,7 +413,7 @@ function renderTablaOrdenes(rol,ordenes){
   }).join('');
   const buscadorHtml='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
     '<div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>'+
-    '<input class="field-input" id="'+rol+'-buscar" value="'+busqueda+'" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarTabla(''+rol+'')"></div>'+
+    '<input class="field-input" id="'+rol+'-buscar" value="'+busqueda+'" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarTabla(\''+rol+'\'\')"></div>'+
     '<span class="muted">'+filtradas.length+' orden(es)</span></div>';
   document.getElementById(rol+'-lista-ct').innerHTML=buscadorHtml+
     (filtradas.length?'<div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Tipo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Accion</th></tr></thead><tbody>'+misHtml+'</tbody></table></div>':'<p class="muted">No hay resultados para esa busqueda.</p>');
