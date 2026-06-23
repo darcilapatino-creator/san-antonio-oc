@@ -677,7 +677,7 @@ async function renderDO(){
     document.getElementById('do-contenido').innerHTML=
     prefAlerta(pfp)+
     `<div class="card">
-      <div class="card-title"><i class="ti ti-clock"></i> Pendientes de aprobación (${pend.length})</div>
+      <div class="card-title"><i class="ti ti-clock"></i> Órdenes pendientes de aprobación (${pend.length})</div>
       ${pend.length?pend.map(o=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--gray2)">
           <div>
@@ -737,11 +737,11 @@ async function renderDP(){
   document.getElementById('dp-contenido').innerHTML=spin('Cargando...');
   try{
     const all=await atGet();
-    const pend=all.filter(o=>o.estado==='Pendiente aprobación Dir. Proyecto');
+    const pend=all.filter(o=>['Pendiente aprobación Dir. Proyecto','Pendiente aprobación Dir. Obra','Elaborada'].includes(o.estado));
     const hist=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado));
     document.getElementById('dp-contenido').innerHTML=`
     <div class="card">
-      <div class="card-title"><i class="ti ti-clock"></i> Pendientes de aprobación (${pend.length})</div>
+      <div class="card-title"><i class="ti ti-clock"></i> Órdenes pendientes de aprobación (${pend.length})</div>
       ${pend.length?pend.map(o=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--gray2)">
           <div>
@@ -765,7 +765,7 @@ async function verDP(aid){
   document.getElementById('dp-contenido').innerHTML=detalle(o);
   const cardDiv=document.createElement('div');cardDiv.className='card';
   const actDiv=document.createElement('div');actDiv.className='actions';
-  if(['Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)){
+  if(['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)){
     const comLbl=document.createElement('div');comLbl.className='card-title';comLbl.innerHTML='<i class="ti ti-message"></i> Tu comentario (opcional)';cardDiv.appendChild(comLbl);
     const ta=document.createElement('textarea');ta.className='field-input';ta.id='dp-com';ta.placeholder='Comentarios para Finanzas...';cardDiv.appendChild(ta);
     const bAprov=document.createElement('button');bAprov.className='btn btn-success';bAprov.innerHTML='<i class="ti ti-check"></i> Aprobar y enviar a Finanzas';
@@ -787,7 +787,9 @@ async function aprobDP(aid){
     const com=document.getElementById('dp-com')?.value||'';
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Director de Proyecto',accion:'Aprobado',comentario:com,fecha:today()});
-    await atPatch(aid,{estado:'En proceso Finanzas',aprobacionDPFecha:today(),aprobacionDPComentario:com,comentariosJson:JSON.stringify(coms)});
+    const camposAprob={estado:'En proceso Finanzas',aprobacionDPFecha:today(),aprobacionDPComentario:com,comentariosJson:JSON.stringify(coms)};
+    if(!o.aprobacionDOFecha)camposAprob.aprobacionDOFecha=today();
+    await atPatch(aid,camposAprob);
     alert('Aprobado y enviado a Finanzas.');renderDP();
   }catch(e){alert('Error: '+e.message);document.getElementById('dp-sav').style.display='none';}
 }
@@ -1100,3 +1102,4 @@ async function verDetalleFin(aid){
 </script>
 </body>
 </html>
+
