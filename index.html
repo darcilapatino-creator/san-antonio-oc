@@ -382,25 +382,47 @@ async function showMisOrdenes(rol){
   try{
     const all=await atGet();
     const mis=all.filter(o=>o.creadoPor===rol);
-    if(!mis.length){document.getElementById(`${rol}-lista-ct`).innerHTML='<p class="muted">No hay órdenes aún.</p>';return;}
-    const misHtml=mis.map(function(o){
-      const oid=o._id;
-      const btn=o.estado==='Elaborada'
-        ?'<button class="btn btn-sm btn-primary" onclick="editarOC(\''+rol+'\',\''+oid+'\')"><i class="ti ti-pencil"></i> Editar</button>'
-        :'<button class="btn btn-sm" onclick="verDetalleResidente(\''+rol+'\',\''+oid+'\')"><i class="ti ti-eye"></i> Ver</button>';
-      return '<tr>'+
-        '<td style="font-weight:600;color:var(--blue);font-family:var(--mono)">'+o.consecutivo+'</td>'+
-        '<td>'+o.tipo+'</td><td>'+o.proveedor+'</td>'+
-        '<td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td>'+
-        '<td>'+(o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'—')+'</td>'+
-        '<td>'+bdg(o.estado)+'</td>'+
-        '<td>'+btn+'</td>'+
-        '</tr>';
-    }).join('');
-    document.getElementById(`${rol}-lista-ct`).innerHTML='<div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Tipo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Acción</th></tr></thead><tbody>'+misHtml+'</tbody></table></div>';
+    if(!mis.length){document.getElementById(`${rol}-lista-ct`).innerHTML='<p class="muted">No hay ordenes aun.</p>';return;}
+    window[`_ordenes_${rol}`]=mis;
+    renderTablaOrdenes(rol,mis);
   }catch(e){document.getElementById(`${rol}-lista-ct`).innerHTML=`<p style="color:var(--red)">Error: ${e.message}</p>`;}
 }
 
+function renderTablaOrdenes(rol,ordenes){
+  const busqueda=(document.getElementById(rol+'-buscar')||{}).value||'';
+  const q=busqueda.toLowerCase();
+  const filtradas=q?ordenes.filter(o=>
+    (o.consecutivo||'').toLowerCase().includes(q)||
+    (o.proveedor||'').toLowerCase().includes(q)||
+    (o.categoria||'').toLowerCase().includes(q)||
+    (o.tipo||'').toLowerCase().includes(q)
+  ):ordenes;
+  const misHtml=filtradas.map(function(o){
+    const oid=o._id;
+    const btn=o.estado==='Elaborada'
+      ?'<button class="btn btn-sm btn-primary" onclick="editarOC(''+rol+'',''+oid+'')"><i class="ti ti-pencil"></i> Editar</button>'
+      :'<button class="btn btn-sm" onclick="verDetalleResidente(''+rol+'',''+oid+'')"><i class="ti ti-eye"></i> Ver</button>';
+    return '<tr>'+
+      '<td style="font-weight:600;color:var(--blue);font-family:var(--mono);font-size:11px">'+o.consecutivo+'</td>'+
+      '<td>'+o.tipo+'</td><td>'+o.proveedor+'</td>'+
+      '<td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td>'+
+      '<td>'+(o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'---')+'</td>'+
+      '<td>'+bdg(o.estado)+'</td>'+
+      '<td>'+btn+'</td>'+
+      '</tr>';
+  }).join('');
+  const buscadorHtml='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
+    '<div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>'+
+    '<input class="field-input" id="'+rol+'-buscar" value="'+busqueda+'" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarTabla(''+rol+'')"></div>'+
+    '<span class="muted">'+filtradas.length+' orden(es)</span></div>';
+  document.getElementById(rol+'-lista-ct').innerHTML=buscadorHtml+
+    (filtradas.length?'<div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Tipo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Accion</th></tr></thead><tbody>'+misHtml+'</tbody></table></div>':'<p class="muted">No hay resultados para esa busqueda.</p>');
+}
+
+function filtrarTabla(rol){
+  const ordenes=window[`_ordenes_${rol}`]||[];
+  renderTablaOrdenes(rol,ordenes);
+}
 function addItem(rol){
   itemIdx++;const idx=itemIdx;
   const tr=document.createElement('tr');tr.id=`ir-${rol}-${idx}`;
@@ -458,7 +480,7 @@ async function guardarOC(rol){
       const all=await atGet();
       const cnt=all.length+1;
       const prefix=tipo==='Orden de Servicio'?'OS':'OC';
-      const consec=`${prefix}-${new Date().getFullYear()}-${String(cnt).padStart(3,'0')}`;
+      const consec=`${prefix}-${new Date().getFullYear()}-${String(cnt).padStart(3,'0')} · ${prov} · ${cat}`;
       const fields={
         consecutivo:consec,tipo,categoria:cat,proveedor:prov,
         nit:document.getElementById(`${rol}-nit`).value||'',
@@ -788,6 +810,10 @@ async function renderFin(){
       <button class="btn btn-excel" onclick="reportePagos()"><i class="ti ti-file-spreadsheet"></i> Generar reporte de pagos</button>
       <button class="btn" onclick="renderFin()"><i class="ti ti-refresh"></i> Actualizar</button>
     </div>
+    <div style="display:flex;gap:8px;margin-bottom:1rem;align-items:center">
+      <div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>
+      <input class="field-input" id="fin-buscar" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarFin()"></div>
+    </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-table"></i> Tabla de control</div>
       ${vis.length?`<div class="table-wrap"><table>
@@ -938,6 +964,10 @@ async function renderCTH(){
       <div class="stat-box"><div class="stat-label">Pre-fact. sin factura</div><div class="stat-val" style="color:${pfp.length?'#856404':'var(--green)'}">${pfp.length}</div></div>
     </div>
     <button class="btn" onclick="renderCTH()" style="margin-bottom:1rem"><i class="ti ti-refresh"></i> Actualizar</button>
+    <div style="display:flex;gap:8px;margin-bottom:1rem;align-items:center">
+      <div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>
+      <input class="field-input" id="cth-buscar" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarCTH()"></div>
+    </div>
     ${todas.length?todas.map(o=>`
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
@@ -1005,6 +1035,24 @@ function detalle(o){
     ${o.observaciones?`<div class="comment-block" style="border-color:var(--orange)"><div class="who">Observaciones</div>${o.observaciones}</div>`:''}
     ${coms.filter(c=>c.comentario).map(c=>`<div class="comment-block"><div class="who">${c.quien} · ${fmtD(c.fecha)}</div>${c.comentario}</div>`).join('')}
   </div>`;
+}
+
+// ── FILTROS DE BUSQUEDA ───────────────────────────────────────────
+function filtrarFin(){
+  const q=(document.getElementById('fin-buscar')||{}).value||'';
+  const filas=document.querySelectorAll('#fin-contenido .table-wrap tbody tr');
+  filas.forEach(function(tr){
+    const txt=tr.textContent.toLowerCase();
+    tr.style.display=q&&!txt.includes(q.toLowerCase())?'none':'';
+  });
+}
+function filtrarCTH(){
+  const q=(document.getElementById('cth-buscar')||{}).value||'';
+  const cards=document.querySelectorAll('#cth-contenido .card');
+  cards.forEach(function(card){
+    const txt=card.textContent.toLowerCase();
+    card.style.display=q&&!txt.includes(q.toLowerCase())?'none':'';
+  });
 }
 </script>
 </body>
