@@ -335,20 +335,14 @@ function buildCreador(rol){
         </div>
         <div class="sep"></div>
         <div class="card-title"><i class="ti ti-list"></i> Ítems</div>
-        <div class="table-wrap"><table><thead><tr><th>#</th><th style="width:35%">Descripción</th><th>Cant.</th><th>Unidad</th><th>Vr. Unitario</th><th>Vr. Bruto</th><th></th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>#</th><th style="width:32%">Descripción</th><th>Cant.</th><th>Unidad</th><th>Vr. Unitario</th><th>IVA</th><th>Vr. Bruto</th><th></th></tr></thead>
         <tbody id="${rol}-items"></tbody></table></div>
         <button class="btn btn-sm mt8" onclick="addItem('${rol}')"><i class="ti ti-plus"></i> Agregar ítem</button>
         <div class="sep"></div>
         <div style="display:flex;justify-content:flex-end">
           <div style="min-width:260px;font-size:13px">
             <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray2)"><span class="muted">Total bruto</span><span id="${rol}-tbruto">$0</span></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--gray2)">
-              <span class="muted">IVA</span>
-              <select class="field-input" id="${rol}-aplica-iva" onchange="calcTot('${rol}')" style="width:auto;padding:3px 8px;font-size:12px">
-                <option value="si">Sí — 19%</option>
-                <option value="no">No aplica</option>
-              </select>
-            </div>
+
             <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray2)"><span class="muted">IVA 19%</span><span id="${rol}-tiva">$0</span></div>
             <div style="display:flex;justify-content:space-between;padding:7px 0;font-weight:600;font-size:15px"><span>Total bruto + IVA</span><span id="${rol}-tpagar" style="color:var(--blue)">$0</span></div>
           </div>
@@ -438,20 +432,21 @@ function addItem(rol){
     <td><input class="field-input" style="padding:5px 8px;font-size:12px;width:75px" type="number" placeholder="0" oninput="calcTot('${rol}')" data-cant></td>
     <td><input class="field-input" style="padding:5px 8px;font-size:12px;width:70px" placeholder="und"></td>
     <td><input class="field-input" style="padding:5px 8px;font-size:12px;width:95px" type="number" placeholder="0" oninput="calcTot('${rol}')" data-vr></td>
+    <td><select class="field-input" style="padding:3px 4px;font-size:11px;width:75px" onchange="calcTot('${rol}')" data-iva><option value="si">IVA 19%</option><option value="no">Sin IVA</option></select></td>
     <td style="text-align:right;font-size:12px;font-weight:500;color:var(--blue)" id="br-${rol}-${idx}">$0</td>
     <td><button class="btn btn-sm" onclick="document.getElementById('ir-${rol}-${idx}').remove();calcTot('${rol}')" style="padding:4px 8px;color:var(--red);border-color:var(--red)"><i class="ti ti-trash"></i></button></td>`;
   document.getElementById(`${rol}-items`).appendChild(tr);
 }
 function calcTot(rol){
-  let b=0;
+  let b=0,iva=0;
   document.querySelectorAll(`#${rol}-items tr`).forEach(tr=>{
-    const c=parseFloat(tr.querySelector('[data-cant]')?.value)||0,v=parseFloat(tr.querySelector('[data-vr]')?.value)||0,br=c*v;b+=br;
+    const c=parseFloat(tr.querySelector('[data-cant]')?.value)||0,v=parseFloat(tr.querySelector('[data-vr]')?.value)||0,br=c*v;
+    const aplicaIva=(tr.querySelector('[data-iva]')?.value||'si')==='si';
+    b+=br;iva+=aplicaIva?br*.19:0;
     const id=tr.id.replace(`ir-${rol}-`,'');const el=document.getElementById(`br-${rol}-${id}`);if(el)el.textContent=fmt(br);
   });
-  const aplicaIva=(document.getElementById(`${rol}-aplica-iva`)?.value||'si')==='si';
-  const iva=aplicaIva?b*.19:0;
   document.getElementById(`${rol}-tbruto`).textContent=fmt(b);
-  document.getElementById(`${rol}-tiva`).textContent=aplicaIva?fmt(iva):'No aplica';
+  document.getElementById(`${rol}-tiva`).textContent=iva>0?fmt(iva):'$0';
   document.getElementById(`${rol}-tpagar`).textContent=fmt(b+iva);
 }
 function getItems(rol){
@@ -459,7 +454,9 @@ function getItems(rol){
   document.querySelectorAll(`#${rol}-items tr`).forEach(tr=>{
     const ins=tr.querySelectorAll('input');
     const desc=ins[0]?.value||'',cant=parseFloat(ins[1]?.value)||0,und=ins[2]?.value||'',vr=parseFloat(ins[3]?.value)||0;
-    if(desc||cant||vr)items.push({desc,cant,unidad:und,vrUnitario:vr,vrBruto:cant*vr});
+    const aplicaIva=(tr.querySelector('[data-iva]')?.value||'si')==='si';
+    const vrBruto=cant*vr;
+    if(desc||cant||vr)items.push({desc,cant,unidad:und,vrUnitario:vr,vrBruto,iva:aplicaIva?vrBruto*.19:0,aplicaIva});
   });
   return items;
 }
@@ -476,7 +473,7 @@ async function guardarOC(rol){
   const sop=document.getElementById(`${rol}-soporte`).value;
   if(!tipo||!cat||!prov||!sop){alert('Completa: Tipo, Categoría, Proveedor y Tipo de soporte');return}
   const items=getItems(rol);
-  const bruto=items.reduce((s,i)=>s+i.vrBruto,0),aplicaIva=(document.getElementById(`${rol}-aplica-iva`)?.value||'si')==='si',iva=aplicaIva?bruto*.19:0;
+  const bruto=items.reduce((s,i)=>s+i.vrBruto,0),iva=items.reduce((s,i)=>s+(i.iva||0),0);
   const slink=document.getElementById(`${rol}-slink`).value||'';
   const rut=document.getElementById(`${rol}-rut`).value||'';
   const banco=document.getElementById(`${rol}-banco`).value||'';
@@ -586,12 +583,14 @@ async function editarOC(rol,aid){
     var ins1=document.createElement('input');ins1.className='field-input';ins1.style.cssText='padding:5px 8px;font-size:12px;width:75px';ins1.type='number';ins1.value=it.cant||0;ins1.setAttribute('data-cant','');ins1.oninput=function(){calcTot(rol);};
     var ins2=document.createElement('input');ins2.className='field-input';ins2.style.cssText='padding:5px 8px;font-size:12px;width:70px';ins2.value=it.unidad||'';
     var ins3=document.createElement('input');ins3.className='field-input';ins3.style.cssText='padding:5px 8px;font-size:12px;width:95px';ins3.type='number';ins3.value=it.vrUnitario||0;ins3.setAttribute('data-vr','');ins3.oninput=function(){calcTot(rol);};
+    var selIva=document.createElement('select');selIva.className='field-input';selIva.style.cssText='padding:3px 4px;font-size:11px;width:75px';selIva.setAttribute('data-iva','');selIva.innerHTML='<option value="si">IVA 19%</option><option value="no">Sin IVA</option>';selIva.value=(it.aplicaIva===false)?'no':'si';selIva.onchange=function(){calcTot(rol);};
     var tdBruto=document.createElement('td');tdBruto.id='br-'+rol+'-'+idx;tdBruto.style.cssText='text-align:right;font-size:12px;font-weight:500;color:var(--blue)';tdBruto.textContent=fmt(it.vrBruto||0);
     var delBtn=document.createElement('button');delBtn.className='btn btn-sm';delBtn.style.cssText='padding:4px 8px;color:var(--red);border-color:var(--red)';
     delBtn.innerHTML='<i class="ti ti-trash"></i>';
     (function(i,r){delBtn.onclick=function(){document.getElementById('ir-'+r+'-'+i).remove();calcTot(r);};})(idx,rol);
     tr.innerHTML='<td style="text-align:center;color:var(--text3);font-size:12px">'+idx+'</td>';
     [ins0,ins1,ins2,ins3].forEach(function(inp){var td=document.createElement('td');td.appendChild(inp);tr.appendChild(td);});
+    var tdIva=document.createElement('td');tdIva.appendChild(selIva);tr.appendChild(tdIva);
     tr.appendChild(tdBruto);var tdDel=document.createElement('td');tdDel.appendChild(delBtn);tr.appendChild(tdDel);
     document.getElementById(rol+'-items').appendChild(tr);
   });
