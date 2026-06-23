@@ -476,7 +476,7 @@ async function guardarOC(rol){
       ocActual=record;
     }
     const falt=[];if(!slink)falt.push('soporte');if(!rut)falt.push('RUT');if(!banco)falt.push('cert.bancaria');
-    showMsg(rol,'<i class="ti ti-check"></i> Orden <b>'+ocActual.consecutivo+'</b> guardada.'+(falt.length?' Docs pendientes: '+falt.join(', '):''),'success');
+   showMsg(rol,'<i class="ti ti-check"></i> Orden <b>'+ocActual.consecutivo+'</b> guardada.'+(falt.length?' Docs pendientes: '+falt.join(', '):''),'success');
     document.getElementById(`${rol}-btn-env`).style.display='inline-flex';
   }catch(e){
     showMsg(rol,`<i class="ti ti-alert-triangle"></i> Error: ${e.message}`,'warning');
