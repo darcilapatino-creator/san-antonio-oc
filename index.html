@@ -398,26 +398,38 @@ function renderTablaOrdenes(rol,ordenes){
     (o.categoria||'').toLowerCase().includes(q)||
     (o.tipo||'').toLowerCase().includes(q)
   ):ordenes;
-  const misHtml=filtradas.map(function(o){
-    const oid=o._id;
-    const btn=o.estado==='Elaborada'
-      ?'<button class="btn btn-sm btn-primary" onclick="editarOC(\''+rol+'\'\',\''+oid+'\'\')"><i class="ti ti-pencil"></i> Editar</button>'
-      :'<button class="btn btn-sm" onclick="verDetalleResidente(\''+rol+'\'\',\''+oid+'\'\')"><i class="ti ti-eye"></i> Ver</button>';
-    return '<tr>'+
-      '<td style="font-weight:600;color:var(--blue);font-family:var(--mono);font-size:11px">'+o.consecutivo+'</td>'+
-      '<td>'+o.tipo+'</td><td>'+o.proveedor+'</td>'+
-      '<td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td>'+
-      '<td>'+(o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'---')+'</td>'+
-      '<td>'+bdg(o.estado)+'</td>'+
-      '<td>'+btn+'</td>'+
-      '</tr>';
-  }).join('');
   const buscadorHtml='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
     '<div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>'+
-    '<input class="field-input" id="'+rol+'-buscar" value="'+busqueda+'" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarTabla(\''+rol+'\'\')"></div>'+
+    '<input class="field-input" id="'+rol+'-buscar" value="'+busqueda+'" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" data-rol="'+rol+'" oninput="filtrarTabla(this.dataset.rol)"></div>'+
     '<span class="muted">'+filtradas.length+' orden(es)</span></div>';
-  document.getElementById(rol+'-lista-ct').innerHTML=buscadorHtml+
-    (filtradas.length?'<div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Tipo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Accion</th></tr></thead><tbody>'+misHtml+'</tbody></table></div>':'<p class="muted">No hay resultados para esa busqueda.</p>');
+  const tabla=filtradas.length?'<div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Tipo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Accion</th></tr></thead><tbody id="tbody-'+rol+'"></tbody></table></div>':'<p class="muted">No hay resultados para esa busqueda.</p>';
+  document.getElementById(rol+'-lista-ct').innerHTML=buscadorHtml+tabla;
+  if(filtradas.length){
+    const tbody=document.getElementById('tbody-'+rol);
+    filtradas.forEach(function(o){
+      const tr=document.createElement('tr');
+      const tdC=document.createElement('td');tdC.style.cssText='font-weight:600;color:var(--blue);font-family:var(--mono);font-size:11px';tdC.textContent=o.consecutivo;
+      const tdT=document.createElement('td');tdT.textContent=o.tipo;
+      const tdP=document.createElement('td');tdP.textContent=o.proveedor;
+      const tdV=document.createElement('td');tdV.textContent=fmt((o.totalBruto||0)+(o.iva||0));
+      const tdS=document.createElement('td');tdS.innerHTML=o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'—';
+      const tdE=document.createElement('td');tdE.innerHTML=bdg(o.estado);
+      const tdA=document.createElement('td');
+      const btn=document.createElement('button');
+      if(o.estado==='Elaborada'){
+        btn.className='btn btn-sm btn-primary';
+        btn.innerHTML='<i class="ti ti-pencil"></i> Editar';
+        btn.onclick=(function(r,id){return function(){editarOC(r,id);};})(rol,o._id);
+      }else{
+        btn.className='btn btn-sm';
+        btn.innerHTML='<i class="ti ti-eye"></i> Ver';
+        btn.onclick=(function(r,id){return function(){verDetalleResidente(r,id);};})(rol,o._id);
+      }
+      tdA.appendChild(btn);
+      [tdC,tdT,tdP,tdV,tdS,tdE,tdA].forEach(function(td){tr.appendChild(td);});
+      tbody.appendChild(tr);
+    });
+  }
 }
 
 function filtrarTabla(rol){
