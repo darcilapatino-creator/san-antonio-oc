@@ -342,6 +342,13 @@ function buildCreador(rol){
         <div style="display:flex;justify-content:flex-end">
           <div style="min-width:260px;font-size:13px">
             <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray2)"><span class="muted">Total bruto</span><span id="${rol}-tbruto">$0</span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--gray2)">
+              <span class="muted">IVA</span>
+              <select class="field-input" id="${rol}-aplica-iva" onchange="calcTot('${rol}')" style="width:auto;padding:3px 8px;font-size:12px">
+                <option value="si">Sí — 19%</option>
+                <option value="no">No aplica</option>
+              </select>
+            </div>
             <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--gray2)"><span class="muted">IVA 19%</span><span id="${rol}-tiva">$0</span></div>
             <div style="display:flex;justify-content:space-between;padding:7px 0;font-weight:600;font-size:15px"><span>Total bruto + IVA</span><span id="${rol}-tpagar" style="color:var(--blue)">$0</span></div>
           </div>
@@ -370,7 +377,7 @@ function showForm(rol){
   document.getElementById(`${rol}-btn-env`).style.display='none';
   document.getElementById(`${rol}-msg`).style.display='none';
   ['tipo','cat','prov','nit','dir','tel','resp','lugar','dir2','obs','soporte','slink','rut','banco'].forEach(f=>{const e=document.getElementById(`${rol}-${f}`);if(e)e.value='';});
-  document.getElementById(`${rol}-prefnote`).style.display='none';
+  document.getElementById(`${rol}-prefnote`).style.display='none';const ivaEl=document.getElementById(`${rol}-aplica-iva`);if(ivaEl)ivaEl.value='si';
   document.getElementById(`${rol}-fecha`).value=today();
   document.getElementById(`${rol}-items`).innerHTML='';
   calcTot(rol);addItem(rol);addItem(rol);
@@ -441,9 +448,10 @@ function calcTot(rol){
     const c=parseFloat(tr.querySelector('[data-cant]')?.value)||0,v=parseFloat(tr.querySelector('[data-vr]')?.value)||0,br=c*v;b+=br;
     const id=tr.id.replace(`ir-${rol}-`,'');const el=document.getElementById(`br-${rol}-${id}`);if(el)el.textContent=fmt(br);
   });
-  const iva=b*.19;
+  const aplicaIva=(document.getElementById(`${rol}-aplica-iva`)?.value||'si')==='si';
+  const iva=aplicaIva?b*.19:0;
   document.getElementById(`${rol}-tbruto`).textContent=fmt(b);
-  document.getElementById(`${rol}-tiva`).textContent=fmt(iva);
+  document.getElementById(`${rol}-tiva`).textContent=aplicaIva?fmt(iva):'No aplica';
   document.getElementById(`${rol}-tpagar`).textContent=fmt(b+iva);
 }
 function getItems(rol){
@@ -468,7 +476,7 @@ async function guardarOC(rol){
   const sop=document.getElementById(`${rol}-soporte`).value;
   if(!tipo||!cat||!prov||!sop){alert('Completa: Tipo, Categoría, Proveedor y Tipo de soporte');return}
   const items=getItems(rol);
-  const bruto=items.reduce((s,i)=>s+i.vrBruto,0),iva=bruto*.19;
+  const bruto=items.reduce((s,i)=>s+i.vrBruto,0),aplicaIva=(document.getElementById(`${rol}-aplica-iva`)?.value||'si')==='si',iva=aplicaIva?bruto*.19:0;
   const slink=document.getElementById(`${rol}-slink`).value||'';
   const rut=document.getElementById(`${rol}-rut`).value||'';
   const banco=document.getElementById(`${rol}-banco`).value||'';
@@ -567,7 +575,7 @@ async function editarOC(rol,aid){
   Object.keys(fieldMap).forEach(function(f){const el=document.getElementById(rol+'-'+f);if(el)el.value=fieldMap[f]||'';});
   const sopEl=document.getElementById(rol+'-soporte');if(sopEl)sopEl.value=o.tipoSoporte||'';
   const slEl=document.getElementById(rol+'-slink');if(slEl)slEl.value=o.enlaceSoporte||'';
-  document.getElementById(rol+'-fecha').value=o.fechaEnvio||today();
+  document.getElementById(rol+'-fecha').value=o.fechaEnvio||today();const ivaElEd=document.getElementById(rol+'-aplica-iva');if(ivaElEd)ivaElEd.value=(o.iva&&o.iva>0)?'si':'no';
   chkPrefac(rol);
   document.getElementById(rol+'-items').innerHTML='';
   const items=JSON.parse(o.itemsJson||'[]');
