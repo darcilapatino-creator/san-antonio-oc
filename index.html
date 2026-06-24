@@ -712,6 +712,7 @@ async function renderDO(){
     const hist=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra'].includes(o.estado));
     const pfp=all.filter(o=>o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida&&mesPago(o.fechaPago)<mesActual());
     document.getElementById('do-contenido').innerHTML=
+    '<div style="display:flex;gap:8px;margin-bottom:1rem"><button class="btn" onclick="renderDO()"><i class="ti ti-refresh"></i> Actualizar</button><button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button></div>'+
     prefAlerta(pfp)+
     `<div class="card">
       <div class="card-title"><i class="ti ti-clock"></i> Órdenes pendientes de aprobación (${pend.length})</div>
@@ -721,6 +722,7 @@ async function renderDO(){
             <span style="font-weight:600;color:var(--blue);font-family:var(--mono)">${o.consecutivo}</span>
             <span class="muted" style="margin-left:8px">${o.tipo} · ${o.categoria}</span>
             ${o.tipoSoporte?`<span class="badge ${o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac'}" style="margin-left:6px">${o.tipoSoporte}</span>`:''}
+            <span class="badge ${o.creadoPor==='sst'?'b-review':'b-approved'}" style="margin-left:6px">${RLBL[o.creadoPor]||o.creadoPor}</span>
             <div class="muted">${o.proveedor} · ${fmt((o.totalBruto||0)+(o.iva||0))}</div>
             <div style="font-size:11px;margin-top:2px">
               ${o.enlaceSoporte?'<span class="ok-tag">✓ Doc</span>':'<span class="missing">✗ Doc</span>'}
@@ -731,8 +733,8 @@ async function renderDO(){
           <button class="btn btn-primary btn-sm" onclick="verDO('${o._id}')"><i class="ti ti-eye"></i> Revisar</button>
         </div>`).join(''):'<p class="muted">No hay órdenes pendientes.</p>'}
       ${hist.length?`<div class="sep"></div><div class="card-title"><i class="ti ti-history"></i> Historial</div>
-      <div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Comprobante</th></tr></thead>
-      <tbody>${hist.map(function(o){var rid=o._id;return '<tr><td style="font-weight:600;color:var(--blue);font-family:var(--mono);cursor:pointer;text-decoration:underline" onclick="verDO(this.dataset.id)" data-id="'+rid+'">'+o.consecutivo+'</td><td>'+o.proveedor+'</td><td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td><td>'+(o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'—')+'</td><td>'+bdg(o.estado)+'</td><td>'+(o.comprobante?'<a href="'+o.comprobante+'" target="_blank" style="color:var(--blue);font-size:11px">Ver</a>':'—')+'</td></tr>';}).join('')}</tbody></table></div>`:''}
+      <div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Creado por</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Comprobante</th></tr></thead>
+      <tbody>${hist.map(function(o){var rid=o._id;return '<tr><td style="font-weight:600;color:var(--blue);font-family:var(--mono);cursor:pointer;text-decoration:underline" onclick="verDO(this.dataset.id)" data-id="'+rid+'">'+o.consecutivo+'</td><td><span class="badge '+(o.creadoPor==='sst'?'b-review':'b-approved')+'">'+(RLBL[o.creadoPor]||o.creadoPor)+'</span></td><td>'+o.proveedor+'</td><td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td><td>'+(o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'—')+'</td><td>'+bdg(o.estado)+'</td><td>'+(o.comprobante?'<a href="'+o.comprobante+'" target="_blank" style="color:var(--blue);font-size:11px">Ver</a>':'—')+'</td></tr>';}).join('')}</tbody></table></div>`:''}
     </div>`;
   }catch(e){document.getElementById('do-contenido').innerHTML=`<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Error: ${e.message}</div>`;}
 }
@@ -788,14 +790,15 @@ async function renderDP(){
           <div>
             <span style="font-weight:600;color:var(--blue);font-family:var(--mono)">${o.consecutivo}</span>
             <span class="muted" style="margin-left:8px">${o.tipo} · ${o.categoria}</span>
+            <span class="badge ${o.creadoPor==='sst'?'b-review':'b-approved'}" style="margin-left:6px">${RLBL[o.creadoPor]||o.creadoPor}</span>
             <div class="muted">${o.proveedor} · ${fmt((o.totalBruto||0)+(o.iva||0))}</div>
             ${o.aprobacionDOComentario?`<div class="comment-block mt8"><div class="who">Dir. Obra comentó</div>${o.aprobacionDOComentario}</div>`:''}
           </div>
           <button class="btn btn-primary btn-sm" onclick="verDP('${o._id}')"><i class="ti ti-eye"></i> Revisar</button>
         </div>`).join(''):'<p class="muted">No hay órdenes pendientes.</p>'}
       ${hist.length?`<div class="sep"></div><div class="card-title"><i class="ti ti-history"></i> Historial</div>
-      <div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Proveedor</th><th>Total</th><th>Dir.Obra</th><th>Estado</th></tr></thead>
-      <tbody>${hist.map(function(o){var rid=o._id;return '<tr><td style="font-weight:600;color:var(--blue);font-family:var(--mono);cursor:pointer;text-decoration:underline" onclick="verDP(this.dataset.id)" data-id="'+rid+'">'+o.consecutivo+'</td><td>'+o.proveedor+'</td><td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td><td>'+(o.aprobacionDOFecha?'<span class="badge b-approved">✓ '+fmtD(o.aprobacionDOFecha)+'</span>':'—')+'</td><td>'+bdg(o.estado)+'</td></tr>';}).join('')}</tbody></table></div>`:''}
+      <div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Creado por</th><th>Proveedor</th><th>Total</th><th>Dir.Obra</th><th>Estado</th></tr></thead>
+      <tbody>${hist.map(function(o){var rid=o._id;return '<tr><td style="font-weight:600;color:var(--blue);font-family:var(--mono);cursor:pointer;text-decoration:underline" onclick="verDP(this.dataset.id)" data-id="'+rid+'">'+o.consecutivo+'</td><td><span class="badge '+(o.creadoPor==='sst'?'b-review':'b-approved')+'">'+(RLBL[o.creadoPor]||o.creadoPor)+'</span></td><td>'+o.proveedor+'</td><td>'+fmt((o.totalBruto||0)+(o.iva||0))+'</td><td>'+(o.aprobacionDOFecha?'<span class="badge b-approved">✓ '+fmtD(o.aprobacionDOFecha)+'</span>':'—')+'</td><td>'+bdg(o.estado)+'</td></tr>';}).join('')}</tbody></table></div>`:''}
     </div>`;
   }catch(e){document.getElementById('dp-contenido').innerHTML=`<div class="alert alert-warning">Error: ${e.message}</div>`;}
 }
