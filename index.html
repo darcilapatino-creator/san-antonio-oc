@@ -288,6 +288,7 @@ function buildCreador(rol){
     <div style="display:flex;gap:10px;margin-bottom:1.5rem;flex-wrap:wrap">
       <button class="btn btn-primary" onclick="showForm('${rol}')"><i class="ti ti-plus"></i> Nueva orden</button>
       <button class="btn" onclick="showMisOrdenes('${rol}')"><i class="ti ti-table"></i> Mis órdenes</button>
+      <button class="btn" onclick="showTodasOrdenes('${rol}')"><i class="ti ti-layout-list"></i> Todas las órdenes</button>
     </div>
     <div id="${rol}-form" style="display:none">
       <div class="card">
@@ -326,7 +327,11 @@ function buildCreador(rol){
               <option value="Pre-factura">Pre-factura</option>
               <option value="Cuenta de cobro">Cuenta de cobro (Persona natural)</option>
             </select></div>
+          <div class="field-group"><label class="field-label">Fecha del soporte *</label><input class="field-input" type="date" id="${rol}-fecha-soporte"></div>
+        </div>
+        <div class="grid-2">
           <div class="field-group"><label class="field-label">Enlace documento soporte *</label><input class="field-input" id="${rol}-slink" placeholder="https://drive.google.com/..."></div>
+          <div class="field-group"><label class="field-label">N° factura / documento</label><input class="field-input" id="${rol}-num-soporte" placeholder="Ej: FV-001, CC-2026-05..."></div>
         </div>
         <div id="${rol}-prefnote" style="display:none" class="soporte-box"><i class="ti ti-alert-triangle"></i><span><b>Pre-factura:</b> El proveedor emitirá la factura DIAN una vez realizado el pago.</span></div>
         <div class="grid-2" style="margin-top:12px">
@@ -370,7 +375,7 @@ function showForm(rol){
   document.getElementById(`${rol}-consec`).textContent='El consecutivo se asignará al guardar';
   document.getElementById(`${rol}-btn-env`).style.display='none';
   document.getElementById(`${rol}-msg`).style.display='none';
-  ['tipo','cat','prov','nit','dir','tel','resp','lugar','dir2','obs','soporte','slink','rut','banco'].forEach(f=>{const e=document.getElementById(`${rol}-${f}`);if(e)e.value='';});
+  ['tipo','cat','prov','nit','dir','tel','resp','lugar','dir2','obs','soporte','slink','rut','banco','num-soporte'].forEach(f=>{const e=document.getElementById(`${rol}-${f}`);if(e)e.value='';});const fSop=document.getElementById(`${rol}-fecha-soporte`);if(fSop)fSop.value='';
   document.getElementById(`${rol}-prefnote`).style.display='none';const ivaEl=document.getElementById(`${rol}-aplica-iva`);if(ivaEl)ivaEl.value='si';
   document.getElementById(`${rol}-fecha`).value=today();
   document.getElementById(`${rol}-items`).innerHTML='';
@@ -426,6 +431,24 @@ function renderTablaOrdenes(rol,ordenes){
         btn.onclick=(function(r,id){return function(){verDetalleResidente(r,id);};})(rol,o._id);
       }
       tdA.appendChild(btn);
+      const btnDup=document.createElement('button');
+      btnDup.className='btn btn-sm';
+      btnDup.style.cssText='margin-left:4px;color:var(--blue);border-color:var(--blue)';
+      btnDup.innerHTML='<i class="ti ti-copy"></i> Duplicar';
+      btnDup.onclick=(function(r,id){return function(){duplicarOC(r,id);};})(rol,o._id);
+      tdA.appendChild(btnDup);
+      // Show rejection reason if rejected
+      if(o.estado==='Rechazada'){
+        const tdR=document.createElement('td');
+        try{
+          const coms=JSON.parse(o.comentariosJson||'[]');
+          const rechazo=coms.filter(function(c){return c.accion&&c.accion.includes('Rechazada');}).pop();
+          if(rechazo&&rechazo.comentario){
+            tdR.innerHTML='<div style="font-size:11px;color:var(--red);max-width:180px"><i class="ti ti-message"></i> '+rechazo.comentario+'</div>';
+          }
+        }catch(e){}
+        tr.appendChild(tdR);
+      }
       [tdC,tdT,tdP,tdV,tdS,tdE,tdA].forEach(function(td){tr.appendChild(td);});
       tbody.appendChild(tr);
     });
@@ -508,7 +531,7 @@ async function guardarOC(rol){
         lugarEntrega:document.getElementById(`${rol}-lugar`).value||'',
         direccionEntrega:document.getElementById(`${rol}-dir2`).value||'',
         observaciones:document.getElementById(`${rol}-obs`).value||'',
-        tipoSoporte:sop,enlaceSoporte:slink,enlaceRut:rut,enlaceCertBancaria:banco,
+        tipoSoporte:sop,fechaSoporte:document.getElementById(`${rol}-fecha-soporte`)?.value||'',numSoporte:document.getElementById(`${rol}-num-soporte`)?.value||'',enlaceSoporte:slink,enlaceRut:rut,enlaceCertBancaria:banco,
         itemsJson:JSON.stringify(items),
         totalBruto:bruto,iva,retefuente1:bruto*.04,retefuente2:bruto*.01,
         totalPagar:bruto+iva-bruto*.04-bruto*.01,
@@ -553,11 +576,25 @@ async function verDetalleResidente(rol,aid){
     bEnv.innerHTML='<i class="ti ti-send"></i> Solicitar aprobación Director Obra';
     bEnv.onclick=function(){solDOdesdeVista(_rol,_aid);};accionesInner.appendChild(bEnv);
   }
+  var bDup=document.createElement('button');bDup.className='btn';
+  bDup.style.cssText='color:var(--blue);border-color:var(--blue)';
+  bDup.innerHTML='<i class="ti ti-copy"></i> Duplicar orden';
+  bDup.onclick=function(){duplicarOC(_rol,_aid);};accionesInner.appendChild(bDup);
   var bVolver=document.createElement('button');bVolver.className='btn';
   bVolver.innerHTML='<i class="ti ti-arrow-left"></i> Volver';
   bVolver.onclick=function(){showMisOrdenes(_rol);};accionesInner.appendChild(bVolver);
   accionesDiv.appendChild(accionesInner);
-  document.getElementById(`${rol}-lista-ct`).innerHTML=detalle(o);
+  let rechazoHtml='';
+  const comsR=JSON.parse(o.comentariosJson||'[]');
+  const rechazoObj=comsR.filter(function(c){return c.accion&&c.accion.includes('Rechazada');}).pop();
+  if(rechazoObj){
+    rechazoHtml='<div class="alert" style="background:var(--lred);color:var(--red);border:1px solid var(--red);margin-bottom:12px">'+
+      '<i class="ti ti-alert-circle"></i>'+
+      '<div><b>Orden rechazada por '+rechazoObj.quien+'</b> el '+fmtD(rechazoObj.fecha)+
+      (rechazoObj.comentario?'<br>Motivo: '+rechazoObj.comentario:'')+
+      '<br><b>Usa el botón "Duplicar orden" para crear una versión corregida.</b></div></div>';
+  }
+  document.getElementById(`${rol}-lista-ct`).innerHTML=rechazoHtml+detalle(o);
   document.getElementById(`${rol}-lista-ct`).appendChild(accionesDiv);
   if(o.aprobacionDOFecha&&o.aprobacionDPFecha){
     var pdfDiv=document.createElement('div');pdfDiv.className='card';
@@ -580,11 +617,11 @@ async function editarOC(rol,aid){
   const msg=document.getElementById(`${rol}-msg`);
   msg.innerHTML='<i class="ti ti-info-circle"></i> Editando <b>'+o.consecutivo+'</b>. Guarda los cambios.';
   msg.className='alert alert-info';msg.style.display='flex';
-  const fieldMap={tipo:o.tipo,cat:o.categoria,prov:o.proveedor,nit:o.nit,dir:o.direccion,tel:o.telefono,resp:o.responsable,lugar:o.lugarEntrega,dir2:o.direccionEntrega,obs:o.observaciones};
+  const fieldMap={tipo:o.tipo,cat:o.categoria,prov:o.proveedor,nit:o.nit,dir:o.direccion,tel:o.telefono,resp:o.responsable,lugar:o.lugarEntrega,dir2:o.direccionEntrega,obs:o.observaciones,'num-soporte':o.numSoporte};
   Object.keys(fieldMap).forEach(function(f){const el=document.getElementById(rol+'-'+f);if(el)el.value=fieldMap[f]||'';});
   const sopEl=document.getElementById(rol+'-soporte');if(sopEl)sopEl.value=o.tipoSoporte||'';
   const slEl=document.getElementById(rol+'-slink');if(slEl)slEl.value=o.enlaceSoporte||'';
-  document.getElementById(rol+'-fecha').value=o.fechaEnvio||today();const ivaElEd=document.getElementById(rol+'-aplica-iva');if(ivaElEd)ivaElEd.value=(o.iva&&o.iva>0)?'si':'no';
+  document.getElementById(rol+'-fecha').value=o.fechaEnvio||today();const fsEl=document.getElementById(rol+'-fecha-soporte');if(fsEl)fsEl.value=o.fechaSoporte||'';const ivaElEd=document.getElementById(rol+'-aplica-iva');if(ivaElEd)ivaElEd.value=(o.iva&&o.iva>0)?'si':'no';
   chkPrefac(rol);
   document.getElementById(rol+'-items').innerHTML='';
   const items=JSON.parse(o.itemsJson||'[]');
@@ -740,6 +777,10 @@ async function renderDP(){
     const pend=all.filter(o=>['Pendiente aprobación Dir. Proyecto','Pendiente aprobación Dir. Obra','Elaborada'].includes(o.estado));
     const hist=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado));
     document.getElementById('dp-contenido').innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:1rem">
+      <button class="btn" onclick="renderDP()"><i class="ti ti-refresh"></i> Actualizar</button>
+      <button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
+    </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-clock"></i> Órdenes pendientes de aprobación (${pend.length})</div>
       ${pend.length?pend.map(o=>`
@@ -1098,6 +1139,176 @@ async function verDetalleFin(aid){
   bVolver.onclick=renderFin;actDiv.appendChild(bVolver);
   cardDiv.appendChild(actDiv);
   document.getElementById('fin-contenido').appendChild(cardDiv);
+}
+
+async function duplicarOC(rol,aid){
+  const all=await atGet();
+  const o=all.find(x=>x._id===aid);
+  if(!o)return;
+  // Parse items and restore IVA per item
+  const items=JSON.parse(o.itemsJson||'[]');
+  ocActual=null;ocGuardada=false;
+  // Show form
+  document.getElementById(rol+'-form').style.display='block';
+  document.getElementById(rol+'-lista').style.display='none';
+  document.getElementById(rol+'-consec').textContent='El consecutivo se asignará al guardar';
+  document.getElementById(rol+'-btn-env').style.display='none';
+  const msg=document.getElementById(rol+'-msg');
+  msg.innerHTML='<div class="alert alert-info"><i class="ti ti-copy"></i> Orden duplicada desde <b>'+o.consecutivo+'</b>. Revisa y ajusta los datos antes de guardar.</div>';
+  msg.style.display='block';
+  // Fill fields
+  const fieldMap={tipo:o.tipo,cat:o.categoria,prov:o.proveedor,nit:o.nit,dir:o.direccion,tel:o.telefono,resp:o.responsable,lugar:o.lugarEntrega,dir2:o.direccionEntrega,obs:o.observaciones,'num-soporte':o.numSoporte};
+  Object.keys(fieldMap).forEach(function(f){const el=document.getElementById(rol+'-'+f);if(el)el.value=fieldMap[f]||'';});
+  const sopEl=document.getElementById(rol+'-soporte');if(sopEl)sopEl.value=o.tipoSoporte||'';
+  const slEl=document.getElementById(rol+'-slink');if(slEl)slEl.value=o.enlaceSoporte||'';
+  const rutEl=document.getElementById(rol+'-rut');if(rutEl)rutEl.value=o.enlaceRut||'';
+  const bancoEl=document.getElementById(rol+'-banco');if(bancoEl)bancoEl.value=o.enlaceCertBancaria||'';
+  document.getElementById(rol+'-fecha').value=today();
+  chkPrefac(rol);
+  // Fill items
+  document.getElementById(rol+'-items').innerHTML='';
+  items.forEach(function(it){
+    itemIdx++;var idx=itemIdx;
+    var tr=document.createElement('tr');tr.id='ir-'+rol+'-'+idx;
+    var ins0=document.createElement('input');ins0.className='field-input';ins0.style.cssText='padding:5px 8px;font-size:12px';ins0.value=it.desc||'';
+    var ins1=document.createElement('input');ins1.className='field-input';ins1.style.cssText='padding:5px 8px;font-size:12px;width:75px';ins1.type='number';ins1.value=it.cant||0;ins1.setAttribute('data-cant','');ins1.oninput=function(){calcTot(rol);};
+    var ins2=document.createElement('input');ins2.className='field-input';ins2.style.cssText='padding:5px 8px;font-size:12px;width:70px';ins2.value=it.unidad||'';
+    var ins3=document.createElement('input');ins3.className='field-input';ins3.style.cssText='padding:5px 8px;font-size:12px;width:95px';ins3.type='number';ins3.value=it.vrUnitario||0;ins3.setAttribute('data-vr','');ins3.oninput=function(){calcTot(rol);};
+    var selIva=document.createElement('select');selIva.className='field-input';selIva.style.cssText='padding:3px 4px;font-size:11px;width:75px';selIva.setAttribute('data-iva','');selIva.innerHTML='<option value="si">IVA 19%</option><option value="no">Sin IVA</option>';selIva.value=(it.aplicaIva===false)?'no':'si';selIva.onchange=function(){calcTot(rol);};
+    var tdBruto=document.createElement('td');tdBruto.id='br-'+rol+'-'+idx;tdBruto.style.cssText='text-align:right;font-size:12px;font-weight:500;color:var(--blue)';tdBruto.textContent=fmt(it.vrBruto||0);
+    var delBtn=document.createElement('button');delBtn.className='btn btn-sm';delBtn.style.cssText='padding:4px 8px;color:var(--red);border-color:var(--red)';
+    delBtn.innerHTML='<i class="ti ti-trash"></i>';
+    (function(i,r){delBtn.onclick=function(){document.getElementById('ir-'+r+'-'+i).remove();calcTot(r);};})(idx,rol);
+    tr.innerHTML='<td style="text-align:center;color:var(--text3);font-size:12px">'+idx+'</td>';
+    [ins0,ins1,ins2,ins3].forEach(function(inp){var td=document.createElement('td');td.appendChild(inp);tr.appendChild(td);});
+    var tdIva=document.createElement('td');tdIva.appendChild(selIva);tr.appendChild(tdIva);
+    tr.appendChild(tdBruto);var tdDel=document.createElement('td');tdDel.appendChild(delBtn);tr.appendChild(tdDel);
+    document.getElementById(rol+'-items').appendChild(tr);
+  });
+  calcTot(rol);
+  // Scroll to form
+  document.getElementById(rol+'-form').scrollIntoView({behavior:'smooth'});
+}
+
+async function showTodasOrdenes(rol){
+  document.getElementById(rol+'-form').style.display='none';
+  document.getElementById(rol+'-lista').style.display='block';
+  document.getElementById(rol+'-lista-ct').innerHTML=spin('Cargando todas las órdenes...');
+  try{
+    const all=await atGet();
+    const visibles=all.filter(o=>o.creadoPor==='residente'||o.creadoPor==='sst');
+    if(!visibles.length){document.getElementById(rol+'-lista-ct').innerHTML='<p class="muted">No hay órdenes aún.</p>';return;}
+    window['_ordenes_todas_'+rol]=visibles;
+    renderTablaTodasOrdenes(rol,visibles);
+  }catch(e){document.getElementById(rol+'-lista-ct').innerHTML='<p style="color:var(--red)">Error: '+e.message+'</p>';}
+}
+
+function renderTablaTodasOrdenes(rol,ordenes){
+  const busqueda=(document.getElementById(rol+'-buscar-todas')||{}).value||'';
+  const q=busqueda.toLowerCase();
+  const filtradas=q?ordenes.filter(o=>
+    (o.consecutivo||'').toLowerCase().includes(q)||
+    (o.proveedor||'').toLowerCase().includes(q)||
+    (o.categoria||'').toLowerCase().includes(q)||
+    (o.tipo||'').toLowerCase().includes(q)||
+    (RLBL[o.creadoPor]||'').toLowerCase().includes(q)
+  ):ordenes;
+  const buscadorHtml='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
+    '<div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>'+
+    '<input class="field-input" id="'+rol+'-buscar-todas" value="'+busqueda+'" placeholder="Buscar por proveedor, consecutivo, categoría, creado por..." style="padding-left:30px" data-rol="'+rol+'" oninput="filtrarTodasOrdenes(this.dataset.rol)"></div>'+
+    '<span class="muted">'+filtradas.length+' orden(es)</span></div>';
+  const tabla=filtradas.length?'<div class="table-wrap"><table><thead><tr><th>Consecutivo</th><th>Creado por</th><th>Tipo</th><th>Proveedor</th><th>Total</th><th>Soporte</th><th>Estado</th><th>Acción</th></tr></thead><tbody id="tbody-todas-'+rol+'"></tbody></table></div>':'<p class="muted">No hay resultados.</p>';
+  document.getElementById(rol+'-lista-ct').innerHTML=
+    '<div class="alert alert-info" style="margin-bottom:12px"><i class="ti ti-layout-list"></i> Vista de todas las órdenes del proyecto</div>'+
+    buscadorHtml+tabla;
+  if(filtradas.length){
+    const tbody=document.getElementById('tbody-todas-'+rol);
+    filtradas.forEach(function(o){
+      const tr=document.createElement('tr');
+      const tdC=document.createElement('td');tdC.style.cssText='font-weight:600;color:var(--blue);font-family:var(--mono);font-size:11px';tdC.textContent=o.consecutivo;
+      const tdCr=document.createElement('td');
+      const esMio=o.creadoPor===rol;
+      tdCr.innerHTML='<span class="badge '+(esMio?'b-approved':'b-review')+'">'+(RLBL[o.creadoPor]||o.creadoPor)+'</span>';
+      const tdT=document.createElement('td');tdT.textContent=o.tipo;
+      const tdP=document.createElement('td');tdP.textContent=o.proveedor;
+      const tdV=document.createElement('td');tdV.textContent=fmt((o.totalBruto||0)+(o.iva||0));
+      const tdS=document.createElement('td');tdS.innerHTML=o.tipoSoporte?'<span class="badge '+(o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac')+'">'+o.tipoSoporte+'</span>':'—';
+      const tdE=document.createElement('td');tdE.innerHTML=bdg(o.estado);
+      const tdA=document.createElement('td');
+      // Ver button for all
+      const btnVer=document.createElement('button');
+      btnVer.className='btn btn-sm';
+      btnVer.innerHTML='<i class="ti ti-eye"></i> Ver';
+      btnVer.onclick=(function(r,id){return function(){verDetalleResidente(r,id);};})(rol,o._id);
+      tdA.appendChild(btnVer);
+      // Duplicar button for all
+      const btnDup=document.createElement('button');
+      btnDup.className='btn btn-sm';
+      btnDup.style.cssText='margin-left:4px;color:var(--blue);border-color:var(--blue)';
+      btnDup.innerHTML='<i class="ti ti-copy"></i> Duplicar';
+      btnDup.onclick=(function(r,id){return function(){duplicarOC(r,id);};})(rol,o._id);
+      tdA.appendChild(btnDup);
+      // Editar only for own orders in Elaborada state
+      if(o.creadoPor===rol&&o.estado==='Elaborada'){
+        const btnEd=document.createElement('button');
+        btnEd.className='btn btn-sm btn-primary';
+        btnEd.style.cssText='margin-left:4px';
+        btnEd.innerHTML='<i class="ti ti-pencil"></i> Editar';
+        btnEd.onclick=(function(r,id){return function(){editarOC(r,id);};})(rol,o._id);
+        tdA.appendChild(btnEd);
+      }
+      [tdC,tdCr,tdT,tdP,tdV,tdS,tdE,tdA].forEach(function(td){tr.appendChild(td);});
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+function filtrarTodasOrdenes(rol){
+  const ordenes=window['_ordenes_todas_'+rol]||[];
+  renderTablaTodasOrdenes(rol,ordenes);
+}
+
+async function exportarExcel(){
+  try{
+    const all=await atGet();
+    if(!all.length){alert('No hay órdenes para exportar.');return;}
+    // Build CSV with BOM for Excel
+    const cols=['Consecutivo','Creado por','Tipo','Categoria','Proveedor','NIT','Fecha soporte','N° soporte','Tipo soporte','Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Aprobacion Dir. Obra','Aprobacion Dir. Proyecto','Registro Finanzas','Estado','Fecha pago','Valor pagado','Observaciones'];
+    const rows=all.map(function(o){
+      return [
+        o.consecutivo||'',
+        RLBL[o.creadoPor]||o.creadoPor||'',
+        o.tipo||'',
+        o.categoria||'',
+        o.proveedor||'',
+        o.nit||'',
+        o.fechaSoporte||'',
+        o.numSoporte||'',
+        o.tipoSoporte||'',
+        o.totalBruto||0,
+        o.iva||0,
+        o.retefuente1||0,
+        o.retefuente2||0,
+        o.totalPagar||0,
+        o.aprobacionDOFecha||'',
+        o.aprobacionDPFecha||'',
+        o.registroFinanzasFecha||'',
+        o.estado||'',
+        o.fechaPago||'',
+        o.valorPagado||0,
+        o.observaciones||''
+      ].map(function(v){return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':v;}).join(';');
+    });
+    const bom=String.fromCharCode(0xFEFF);const csv=bom+cols.map(function(c){return '"'+c+'"';}).join(';')+'\n'+rows.join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    const fecha=new Date().toISOString().split('T')[0];
+    a.download='OC-OS_SanAntonio_'+fecha+'.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }catch(e){alert('Error al exportar: '+e.message);}
 }
 </script>
 </body>
