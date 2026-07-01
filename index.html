@@ -639,11 +639,25 @@ async function verDetalleResidente(rol,aid){
   document.getElementById(`${rol}-lista-ct`).appendChild(accionesDiv);
   if(o.aprobacionDOFecha&&o.aprobacionDPFecha){
     var pdfDiv=document.createElement('div');pdfDiv.className='card';
+    var pdfAcc=document.createElement('div');pdfAcc.className='actions';
     var pdfBtn=document.createElement('button');pdfBtn.className='btn btn-success';
     pdfBtn.innerHTML='<i class="ti ti-file-download"></i> Descargar PDF aprobado';
     pdfBtn.onclick=function(){generarPDF(_aid);};
-    var pdfAcc=document.createElement('div');pdfAcc.className='actions';
-    pdfAcc.appendChild(pdfBtn);pdfDiv.appendChild(pdfAcc);
+    pdfAcc.appendChild(pdfBtn);
+    // Factura definitiva button for pre-factura paid orders
+    if(o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida){
+      var factBtn=document.createElement('button');factBtn.className='btn btn-warning';
+      factBtn.innerHTML='<i class="ti ti-file-invoice"></i> Registrar factura definitiva DIAN';
+      factBtn.onclick=function(){mostrarFormFacturaDef(_rol,_aid);};
+      pdfAcc.appendChild(factBtn);
+    }
+    if(o.tipoSoporte==='Pre-factura'&&o.facturaDefinitivaRecibida){
+      var factOk=document.createElement('div');
+      factOk.className='alert alert-success';
+      factOk.innerHTML='<i class="ti ti-circle-check"></i> Factura definitiva DIAN registrada el '+fmtD(o.fechaFacturaDefinitiva);
+      pdfDiv.appendChild(factOk);
+    }
+    pdfDiv.appendChild(pdfAcc);
     document.getElementById(`${rol}-lista-ct`).appendChild(pdfDiv);
   }
 }
@@ -962,13 +976,85 @@ function accionFin(o){
   return'—';
 }
 async function procFin(aid){
+  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const bruto=o.totalBruto||0;const iva=o.iva||0;
+  const ret1Sug=Math.round(bruto*0.04);
+  const ret2Sug=Math.round(bruto*0.01);
+  const cont=document.getElementById('fin-banco');
+  cont.innerHTML='';
+  const card=document.createElement('div');card.className='card';card.style.cssText='border:2px solid var(--dark)';
+  // Title
+  const title=document.createElement('div');title.className='card-title';
+  title.innerHTML='<i class="ti ti-check"></i> Procesar orden — '+o.consecutivo;
+  card.appendChild(title);
+  // Alert
+  const al=document.createElement('div');al.className='alert alert-info';
+  al.innerHTML='<i class="ti ti-info-circle"></i> Verifica y ajusta las retenciones. Deja en 0 si no aplican.';
+  card.appendChild(al);
+  // Retenciones grid
+  const grid=document.createElement('div');grid.className='grid-2';
+  grid.innerHTML=
+    '<div class="field-group"><label class="field-label">Retefuente 1 — Renta</label>'+
+    '<input class="field-input" type="number" id="pf-ret1" value="'+ret1Sug+'"></div>'+
+    '<div class="field-group"><label class="field-label">Retefuente 2 — ICA</label>'+
+    '<input class="field-input" type="number" id="pf-ret2" value="'+ret2Sug+'"></div>';
+  card.appendChild(grid);
+  // Totales summary
+  const resumen=document.createElement('div');
+  resumen.style.cssText='background:var(--gray1);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px';
+  resumen.innerHTML=
+    '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span class="muted">Total bruto + IVA</span><span>'+fmt(bruto+iva)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span class="muted">Retefuente 1</span><span id="pf-ret1-fmt">'+fmt(ret1Sug)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span class="muted">Retefuente 2</span><span id="pf-ret2-fmt">'+fmt(ret2Sug)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;padding:6px 0;font-weight:600;font-size:15px;border-top:1px solid var(--gray3)"><span>Neto a pagar</span><span id="pf-neto" style="color:var(--blue)">'+fmt(bruto+iva-ret1Sug-ret2Sug)+'</span></div>';
+  card.appendChild(resumen);
+  // Live calc
+  ['pf-ret1','pf-ret2'].forEach(function(id){
+    const inp=grid.querySelector('#'+id);
+    if(inp)inp.addEventListener('input',function(){
+      const r1=parseFloat(document.getElementById('pf-ret1').value)||0;
+      const r2=parseFloat(document.getElementById('pf-ret2').value)||0;
+      document.getElementById('pf-ret1-fmt').textContent=fmt(r1);
+      document.getElementById('pf-ret2-fmt').textContent=fmt(r2);
+      document.getElementById('pf-neto').textContent=fmt(bruto+iva-r1-r2);
+    });
+  });
+  // Actions
+  const actDiv=document.createElement('div');actDiv.className='actions';
+  const savDiv=document.createElement('div');savDiv.id='pf-sav';savDiv.style.display='none';savDiv.className='loading';savDiv.innerHTML='<div class="spinner"></div> Guardando...';
+  const btnOk=document.createElement('button');btnOk.className='btn btn-dark';
+  btnOk.innerHTML='<i class="ti ti-check"></i> Confirmar y pasar a Por pagar';
+  btnOk.onclick=(function(a,b,iv){return function(){confirmarProcFin(a,b,iv);};})(aid,bruto,iva);
+  const btnCan=document.createElement('button');btnCan.className='btn';
+  btnCan.innerHTML='Cancelar';
+  btnCan.onclick=function(){cont.innerHTML='';};
+  actDiv.appendChild(btnOk);actDiv.appendChild(btnCan);
+  card.appendChild(actDiv);card.appendChild(savDiv);
+  cont.appendChild(card);
+  cont.scrollIntoView({behavior:'smooth'});
+}
+
+
+async function confirmarProcFin(aid, bruto, iva){
+  const ret1=parseFloat(document.getElementById('pf-ret1')?.value)||0;
+  const ret2=parseFloat(document.getElementById('pf-ret2')?.value)||0;
+  const neto=(bruto+iva)-ret1-ret2;
+  document.getElementById('pf-sav').style.display='flex';
   try{
     const all=await atGet();const o=all.find(x=>x._id===aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
-    coms.push({quien:'Finanzas',accion:'Procesado — Por pagar',fecha:today()});
-    await atPatch(aid,{estado:'Por pagar',registroFinanzasFecha:today(),comentariosJson:JSON.stringify(coms)});
+    coms.push({quien:'Finanzas',accion:'Procesado — Por pagar. Ret1: '+fmt(ret1)+' Ret2: '+fmt(ret2),fecha:today()});
+    await atPatch(aid,{
+      estado:'Por pagar',
+      registroFinanzasFecha:today(),
+      retefuente1:ret1,
+      retefuente2:ret2,
+      totalPagar:neto,
+      comentariosJson:JSON.stringify(coms)
+    });
+    document.getElementById('fin-banco').innerHTML='';
     renderFin();
-  }catch(e){alert('Error: '+e.message);}
+  }catch(e){alert('Error: '+e.message);document.getElementById('pf-sav').style.display='none';}
 }
 function editBanco(aid){
   document.getElementById('fin-banco').innerHTML=`
@@ -1441,6 +1527,64 @@ async function guardarProveedor(rol){
     }
     proveedoresCache=[];
   }catch(e){console.error('Error guardando proveedor:',e);}
+}
+
+function mostrarFormFacturaDef(rol, aid){
+  var existingForm=document.getElementById('form-fact-def-'+rol);
+  if(existingForm)existingForm.remove();
+  var formDiv=document.createElement('div');
+  formDiv.id='form-fact-def-'+rol;
+  formDiv.className='card';
+  formDiv.style.cssText='border:2px solid var(--green);margin-top:12px';
+  var inner=document.createElement('div');
+  inner.innerHTML=
+    '<div class="card-title"><i class="ti ti-file-invoice"></i> Registrar factura definitiva DIAN</div>'+
+    '<div class="alert alert-info" style="margin-bottom:12px"><i class="ti ti-info-circle"></i> Una vez registrada, la orden quedará completamente cerrada.</div>'+
+    '<div class="grid-2">'+
+      '<div class="field-group"><label class="field-label">N° de factura DIAN *</label><input class="field-input" id="fd-num-'+rol+'" placeholder="Ej: FE-0001234..."></div>'+
+      '<div class="field-group"><label class="field-label">Fecha de la factura *</label><input class="field-input" type="date" id="fd-fecha-'+rol+'" value="'+today()+'"></div>'+
+    '</div>'+
+    '<div class="field-group"><label class="field-label">Enlace factura en Drive</label><input class="field-input" id="fd-link-'+rol+'" placeholder="https://drive.google.com/..."></div>'+
+    '<div id="fd-sav-'+rol+'" style="display:none" class="loading"><div class="spinner"></div> Guardando...</div>';
+  formDiv.appendChild(inner);
+  var actDiv=document.createElement('div');actDiv.className='actions';
+  var btnOk=document.createElement('button');btnOk.className='btn btn-success';
+  btnOk.innerHTML='<i class="ti ti-check"></i> Confirmar factura definitiva';
+  btnOk.onclick=(function(r,a){return function(){confirmarFacturaDef(r,a);};})(rol,aid);
+  var btnCan=document.createElement('button');btnCan.className='btn';
+  btnCan.innerHTML='Cancelar';
+  btnCan.onclick=function(){formDiv.remove();};
+  actDiv.appendChild(btnOk);actDiv.appendChild(btnCan);
+  formDiv.appendChild(actDiv);
+  document.getElementById(rol+'-lista-ct').appendChild(formDiv);
+  formDiv.scrollIntoView({behavior:'smooth'});
+}
+
+
+async function confirmarFacturaDef(rol, aid){
+  const num=document.getElementById('fd-num-'+rol)?.value||'';
+  const fecha=document.getElementById('fd-fecha-'+rol)?.value||'';
+  const link=document.getElementById('fd-link-'+rol)?.value||'';
+  if(!num||!fecha){alert('Completa el número y fecha de la factura');return;}
+  document.getElementById('fd-sav-'+rol).style.display='flex';
+  try{
+    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const coms=JSON.parse(o.comentariosJson||'[]');
+    coms.push({quien:RLBL[rol],accion:'Factura definitiva DIAN registrada — N° '+num,fecha:today()});
+    await atPatch(aid,{
+      facturaDefinitivaRecibida:true,
+      fechaFacturaDefinitiva:fecha,
+      numSoporte:num,
+      enlaceSoporte:link||o.enlaceSoporte,
+      comentariosJson:JSON.stringify(coms)
+    });
+    document.getElementById('form-fact-def-'+rol).remove();
+    alert('Factura definitiva registrada correctamente.');
+    showMisOrdenes(rol);
+  }catch(e){
+    alert('Error: '+e.message);
+    document.getElementById('fd-sav-'+rol).style.display='none';
+  }
 }
 </script>
 </body>
