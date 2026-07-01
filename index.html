@@ -193,6 +193,8 @@ tr:hover td{background:var(--gray1)}
 const AT_TOKEN='patsyoGouT1Wiw9vc.3279ea09d25b5222c360ace6507897bf2181a364ffda0b92a693b6212d658c62';
 const AT_BASE='appTZhqPgdTQdpUbV';
 const AT_TABLE='Ordenes';
+const AT_TABLE_PROV='Proveedores';
+const AT_URL_PROV=`https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE_PROV)}`;
 const AT_URL=`https://api.airtable.com/v0/${AT_BASE}/${encodeURIComponent(AT_TABLE)}`;
 const HDR={'Authorization':`Bearer ${AT_TOKEN}`,'Content-Type':'application/json'};
 
@@ -228,6 +230,41 @@ async function atPatch(id,fields){
   const d=await r.json();
   return{_id:d.id,...d.fields};
 }
+
+// ── PROVEEDORES ──────────────────────────────────────────────────
+async function atGetProveedores(){
+  let all=[],offset=null;
+  do{
+    const url=AT_URL_PROV+(offset?`?offset=${offset}`:'');
+    const r=await fetch(url,{headers:HDR});
+    if(!r.ok){const e=await r.text();throw new Error(`Airtable error ${r.status}: ${e}`);}
+    const d=await r.json();
+    if(d.records)all=[...all,...d.records.map(rec=>({_id:rec.id,...rec.fields}))];
+    offset=d.offset||null;
+  }while(offset);
+  return all;
+}
+async function atCreateProveedor(fields){
+  const r=await fetch(AT_URL_PROV,{method:'POST',headers:HDR,body:JSON.stringify({fields})});
+  if(!r.ok){const e=await r.text();throw new Error(`Airtable error ${r.status}: ${e}`);}
+  const d=await r.json();
+  return{_id:d.id,...d.fields};
+}
+async function atPatchProveedor(id,fields){
+  const r=await fetch(`${AT_URL_PROV}/${id}`,{method:'PATCH',headers:HDR,body:JSON.stringify({fields})});
+  if(!r.ok){const e=await r.text();throw new Error(`Airtable error ${r.status}: ${e}`);}
+  const d=await r.json();
+  return{_id:d.id,...d.fields};
+}
+let proveedoresCache=[];
+async function cargarProveedores(){
+  try{
+    if(proveedoresCache.length)return proveedoresCache;
+    proveedoresCache=await atGetProveedores();
+    return proveedoresCache;
+  }catch(e){console.error('Error cargando proveedores:',e);return[];}
+}
+
 
 const fmt=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0);
 const fmtD=iso=>iso?new Date(iso+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'—';
@@ -302,7 +339,10 @@ function buildCreador(rol){
         </div>
         ${rol==='sst'?`<div class="alert alert-info"><i class="ti ti-shield-check"></i> SST: Mano de Obra o Administrativo únicamente.</div>`:''}
         <div class="grid-2">
-          <div class="field-group"><label class="field-label">Proveedor / Razón social *</label><input class="field-input" id="${rol}-prov" placeholder="Nombre o razón social"></div>
+          <div class="field-group" style="position:relative"><label class="field-label">Proveedor / Razón social *</label>
+            <input class="field-input" id="${rol}-prov" placeholder="Escribe para buscar proveedor..." autocomplete="off" oninput="buscarProveedor('${rol}')">
+            <div id="${rol}-prov-sugg" style="display:none;position:absolute;z-index:200;background:#fff;border:1px solid var(--gray3);border-radius:var(--radius-sm);width:100%;max-height:200px;overflow-y:auto;box-shadow:var(--shadow)"></div>
+          </div>
           <div class="field-group"><label class="field-label">NIT</label><input class="field-input" id="${rol}-nit" placeholder="000.000.000-0"></div>
         </div>
         <div class="grid-2">
@@ -335,8 +375,8 @@ function buildCreador(rol){
         </div>
         <div id="${rol}-prefnote" style="display:none" class="soporte-box"><i class="ti ti-alert-triangle"></i><span><b>Pre-factura:</b> El proveedor emitirá la factura DIAN una vez realizado el pago.</span></div>
         <div class="grid-2" style="margin-top:12px">
-          <div class="field-group"><label class="field-label">Enlace RUT proveedor *</label><input class="field-input" id="${rol}-rut" placeholder="https://drive.google.com/..."></div>
-          <div class="field-group"><label class="field-label">Enlace certificación bancaria *</label><input class="field-input" id="${rol}-banco" placeholder="https://drive.google.com/..."></div>
+          <div class="field-group"><label class="field-label">Enlace RUT proveedor *</label><input class="field-input" id="${rol}-rut" placeholder="https://drive.google.com/..."><div id="${rol}-rut-tag" style="display:none;font-size:11px;color:var(--green);margin-top:2px"><i class="ti ti-check"></i> Cargado desde base de proveedores</div></div>
+          <div class="field-group"><label class="field-label">Enlace certificación bancaria *</label><input class="field-input" id="${rol}-banco" placeholder="https://drive.google.com/..."><div id="${rol}-banco-tag" style="display:none;font-size:11px;color:var(--green);margin-top:2px"><i class="ti ti-check"></i> Cargado desde base de proveedores</div></div>
         </div>
         <div class="sep"></div>
         <div class="card-title"><i class="ti ti-list"></i> Ítems</div>
@@ -375,7 +415,7 @@ function showForm(rol){
   document.getElementById(`${rol}-consec`).textContent='El consecutivo se asignará al guardar';
   document.getElementById(`${rol}-btn-env`).style.display='none';
   document.getElementById(`${rol}-msg`).style.display='none';
-  ['tipo','cat','prov','nit','dir','tel','resp','lugar','dir2','obs','soporte','slink','rut','banco','num-soporte'].forEach(f=>{const e=document.getElementById(`${rol}-${f}`);if(e)e.value='';});const fSop=document.getElementById(`${rol}-fecha-soporte`);if(fSop)fSop.value='';
+  ['tipo','cat','prov','nit','dir','tel','resp','lugar','dir2','obs','soporte','slink','rut','banco','num-soporte'].forEach(f=>{const e=document.getElementById(`${rol}-${f}`);if(e)e.value='';});const fSop=document.getElementById(`${rol}-fecha-soporte`);if(fSop)fSop.value='';window[rol+'_prov_id']=null;const rutTag2=document.getElementById(`${rol}-rut-tag`);if(rutTag2)rutTag2.style.display='none';const bancoTag2=document.getElementById(`${rol}-banco-tag`);if(bancoTag2)bancoTag2.style.display='none';
   document.getElementById(`${rol}-prefnote`).style.display='none';const ivaEl=document.getElementById(`${rol}-aplica-iva`);if(ivaEl)ivaEl.value='si';
   document.getElementById(`${rol}-fecha`).value=today();
   document.getElementById(`${rol}-items`).innerHTML='';
@@ -514,6 +554,7 @@ async function guardarOC(rol){
   const banco=document.getElementById(`${rol}-banco`).value||'';
   document.getElementById(`${rol}-saving`).style.display='flex';
   document.getElementById(`${rol}-msg`).style.display='none';
+  await guardarProveedor(rol);
   try{
     let record;
     if(!ocGuardada){
@@ -1312,6 +1353,94 @@ async function exportarExcel(){
     a.click();
     URL.revokeObjectURL(url);
   }catch(e){alert('Error al exportar: '+e.message);}
+}
+
+// ── AUTOCOMPLETE PROVEEDORES ──────────────────────────────────────
+async function buscarProveedor(rol){
+  const q=(document.getElementById(rol+'-prov').value||'').toLowerCase().trim();
+  const sugg=document.getElementById(rol+'-prov-sugg');
+  if(q.length<2){sugg.style.display='none';return;}
+  const provs=await cargarProveedores();
+  const found=provs.filter(p=>(p.Nombre||'').toLowerCase().includes(q)||(p.NIT||'').toLowerCase().includes(q));
+  if(!found.length){
+    sugg.innerHTML='<div style="padding:10px 12px;font-size:12px;color:var(--text3)">No encontrado — se registrará como nuevo proveedor</div>';
+    sugg.style.display='block';return;
+  }
+  sugg.innerHTML='';
+  found.forEach(function(p){
+    var div=document.createElement('div');
+    div.style.cssText='padding:8px 12px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--gray2)';
+    div.innerHTML='<b>'+(p.Nombre||'')+'</b>'+(p.NIT?' · '+p.NIT:'')+
+      (p['Enlace RUT']?'<span style="margin-left:6px;color:var(--green);font-size:10px">✓ RUT</span>':'')+
+      (p['Enlace certificacion']?'<span style="margin-left:4px;color:var(--green);font-size:10px">✓ Banco</span>':'');
+    div.onmousedown=function(){seleccionarProveedor(rol,p._id);};
+    div.onmouseover=function(){this.style.background='var(--gray1)';};
+    div.onmouseout=function(){this.style.background='';};
+    sugg.appendChild(div);
+  });
+  sugg.style.display='block';
+}
+
+async function seleccionarProveedor(rol,pid){
+  const provs=await cargarProveedores();
+  const p=provs.find(x=>x._id===pid);
+  if(!p)return;
+  document.getElementById(rol+'-prov').value=p.Nombre||'';
+  document.getElementById(rol+'-prov-sugg').style.display='none';
+  // Fill NIT
+  const nitEl=document.getElementById(rol+'-nit');if(nitEl)nitEl.value=p.NIT||'';
+  // Fill direccion
+  const dirEl=document.getElementById(rol+'-dir');if(dirEl)dirEl.value=p['Dirección']||'';
+  // Fill telefono
+  const telEl=document.getElementById(rol+'-tel');if(telEl)telEl.value=p['Teléfono']||'';
+  // Fill RUT
+  const rutEl=document.getElementById(rol+'-rut');
+  if(rutEl){
+    rutEl.value=p['Enlace RUT']||'';
+    const rutTag=document.getElementById(rol+'-rut-tag');
+    if(rutTag)rutTag.style.display=p['Enlace RUT']?'block':'none';
+  }
+  // Fill cert bancaria
+  const bancoEl=document.getElementById(rol+'-banco');
+  if(bancoEl){
+    bancoEl.value=p['Enlace certificacion']||'';
+    const bancoTag=document.getElementById(rol+'-banco-tag');
+    if(bancoTag)bancoTag.style.display=p['Enlace certificacion']?'block':'none';
+  }
+  // Fill datos bancarios
+  const ebEl=document.getElementById(rol+'-entidad-bancaria');if(ebEl)ebEl.value=p['Entidad bancaria']||'';
+  const tcEl=document.getElementById(rol+'-tipo-cuenta');if(tcEl)tcEl.value=p['Tipo de cuenta']||'';
+  const ncEl=document.getElementById(rol+'-num-cuenta');if(ncEl)ncEl.value=p['Número de cuenta']||'';
+  // Store provider id for later update
+  window[rol+'_prov_id']=pid;
+}
+
+// Hide suggestions when clicking outside
+document.addEventListener('click',function(e){
+  document.querySelectorAll('[id$="-prov-sugg"]').forEach(function(el){
+    if(!el.contains(e.target))el.style.display='none';
+  });
+});
+
+async function guardarProveedor(rol){
+  const nombre=document.getElementById(rol+'-prov').value.trim();
+  const nit=document.getElementById(rol+'-nit')?.value||'';
+  const rut=document.getElementById(rol+'-rut')?.value||'';
+  const banco=document.getElementById(rol+'-banco')?.value||'';
+  const dir=document.getElementById(rol+'-dir')?.value||'';
+  const tel=document.getElementById(rol+'-tel')?.value||'';
+  if(!nombre)return;
+  const pid=window[rol+'_prov_id'];
+  const fields={'Nombre':nombre,'NIT':nit,'Enlace RUT':rut,'Enlace certificacion':banco,'Dirección':dir,'Teléfono':tel};
+  try{
+    if(pid){
+      await atPatchProveedor(pid,fields);
+    }else{
+      const np=await atCreateProveedor(fields);
+      window[rol+'_prov_id']=np._id;
+    }
+    proveedoresCache=[];
+  }catch(e){console.error('Error guardando proveedor:',e);}
 }
 </script>
 </body>
