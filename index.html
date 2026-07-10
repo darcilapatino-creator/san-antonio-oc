@@ -66,6 +66,11 @@ textarea.field-input{resize:vertical;min-height:60px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{background:var(--dark);color:#fff;padding:9px 12px;text-align:left;font-weight:500;white-space:nowrap;font-size:11px}
 td{padding:8px 12px;border-bottom:1px solid var(--gray2);color:var(--text1)}
+/* Tabla compacta de Finanzas: columnas mas angostas, primera columna fija al hacer scroll */
+.table-fin th,.table-fin td{padding:6px 8px;font-size:10.5px;line-height:1.3}
+.table-fin th:first-child,.table-fin td:first-child{position:sticky;left:0;background:#fff;z-index:1;box-shadow:1px 0 0 var(--gray3)}
+.table-fin th:first-child{background:var(--dark);z-index:2}
+.table-fin td .sub{display:block;color:var(--text3);font-size:9px;margin-top:1px}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:var(--gray1)}
 .st-track{display:flex;margin:1rem 0}
@@ -268,6 +273,23 @@ async function cargarProveedores(){
 
 const fmt=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0);
 const fmtD=iso=>iso?new Date(iso+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'—';
+// Extrae el numero secuencial de un consecutivo tipo "OC-2026-001 · Prov · Cat"
+function consecNum(c){
+  if(!c)return 0;
+  const m=c.match(/-(\d+)\s*·/);
+  return m?parseInt(m[1],10):0;
+}
+// Ordena un arreglo de ordenes por su consecutivo real (prefijo, año, numero)
+function ordenarPorConsecutivo(arr,desc){
+  const out=[...arr].sort((a,b)=>{
+    const pa=(a.consecutivo||''),pb=(b.consecutivo||'');
+    const ya=parseInt((pa.match(/-(\d{4})-/)||[])[1])||0,yb=parseInt((pb.match(/-(\d{4})-/)||[])[1])||0;
+    if(ya!==yb)return desc?yb-ya:ya-yb;
+    const na=consecNum(pa),nb=consecNum(pb);
+    return desc?nb-na:na-nb;
+  });
+  return out;
+}
 const today=()=>new Date().toISOString().split('T')[0];
 const mesActual=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
 const mesPago=iso=>iso?iso.substring(0,7):'';
@@ -427,7 +449,7 @@ async function showMisOrdenes(rol){
   document.getElementById(`${rol}-lista-ct`).innerHTML=spin('Cargando...');
   try{
     const all=await atGet();
-    const mis=all.filter(o=>o.creadoPor===rol);
+    const mis=ordenarPorConsecutivo(all.filter(o=>o.creadoPor===rol),true);
     if(!mis.length){document.getElementById(`${rol}-lista-ct`).innerHTML='<p class="muted">No hay ordenes aun.</p>';return;}
     window[`_ordenes_${rol}`]=mis;
     renderTablaOrdenes(rol,mis);
@@ -559,9 +581,11 @@ async function guardarOC(rol){
     let record;
     if(!ocGuardada){
       const all=await atGet();
-      const cnt=all.length+1;
       const prefix=tipo==='Orden de Servicio'?'OS':'OC';
-      const consec=`${prefix}-${new Date().getFullYear()}-${String(cnt).padStart(3,'0')} · ${prov} · ${cat}`;
+      const yr=new Date().getFullYear();
+      const usados=all.filter(o=>(o.consecutivo||'').startsWith(`${prefix}-${yr}-`)).map(o=>consecNum(o.consecutivo));
+      const cnt=(usados.length?Math.max(...usados):0)+1;
+      const consec=`${prefix}-${yr}-${String(cnt).padStart(3,'0')} · ${prov} · ${cat}`;
       const fields={
         consecutivo:consec,tipo,categoria:cat,proveedor:prov,
         nit:document.getElementById(`${rol}-nit`).value||'',
@@ -763,8 +787,8 @@ async function renderDO(){
   document.getElementById('do-contenido').innerHTML=spin('Cargando órdenes...');
   try{
     const all=await atGet();
-    const pend=all.filter(o=>o.estado==='Pendiente aprobación Dir. Obra');
-    const hist=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra'].includes(o.estado));
+    const pend=ordenarPorConsecutivo(all.filter(o=>o.estado==='Pendiente aprobación Dir. Obra'));
+    const hist=ordenarPorConsecutivo(all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra'].includes(o.estado)),true);
     const pfp=all.filter(o=>o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida&&mesPago(o.fechaPago)<mesActual());
     document.getElementById('do-contenido').innerHTML=
     '<div style="display:flex;gap:8px;margin-bottom:1rem"><button class="btn" onclick="renderDO()"><i class="ti ti-refresh"></i> Actualizar</button><button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button></div>'+
@@ -831,8 +855,8 @@ async function renderDP(){
   document.getElementById('dp-contenido').innerHTML=spin('Cargando...');
   try{
     const all=await atGet();
-    const pend=all.filter(o=>['Pendiente aprobación Dir. Proyecto','Pendiente aprobación Dir. Obra','Elaborada'].includes(o.estado));
-    const hist=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado));
+    const pend=ordenarPorConsecutivo(all.filter(o=>['Pendiente aprobación Dir. Proyecto','Pendiente aprobación Dir. Obra','Elaborada'].includes(o.estado)));
+    const hist=ordenarPorConsecutivo(all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)),true);
     document.getElementById('dp-contenido').innerHTML=`
     <div style="display:flex;gap:8px;margin-bottom:1rem">
       <button class="btn" onclick="renderDP()"><i class="ti ti-refresh"></i> Actualizar</button>
@@ -915,7 +939,7 @@ async function renderFin(){
     const pfp=all.filter(o=>o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida&&mesPago(o.fechaPago)<mesActual());
     const saldo=xPag.reduce((s,o)=>s+(o.totalPagar||0),0);
     const sinB=xPag.filter(o=>!o.entidadBancaria).length;
-    const vis=all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado));
+    const vis=ordenarPorConsecutivo(all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)));
     document.getElementById('fin-contenido').innerHTML=
     prefAlerta(pfp)+
     (sinB?`<div class="prefac-alert"><div class="prefac-alert-title"><i class="ti ti-building-bank"></i> ${sinB} orden(es) sin datos bancarios</div></div>`:'')+
@@ -936,22 +960,19 @@ async function renderFin(){
     </div>
     <div class="card">
       <div class="card-title"><i class="ti ti-table"></i> Tabla de control</div>
-      ${vis.length?`<div class="table-wrap"><table>
-        <thead><tr><th>Consecutivo</th><th>Creado por</th><th>Proveedor</th><th>NIT</th><th>Bruto+IVA</th><th>Ret.1</th><th>Ret.2</th><th>Neto</th><th>Soporte</th><th>Dir.Obra</th><th>Dir.Proy.</th><th>Banco</th><th>Estado</th><th>Fecha pago</th><th>Vr.pagado</th><th>Fact.def.</th><th>Acción</th><th>Ver</th></tr></thead>
+      ${vis.length?`<div class="table-wrap"><table class="table-fin">
+        <thead><tr><th>Consecutivo</th><th>Proveedor</th><th>Bruto+IVA</th><th>Retenciones</th><th>Neto</th><th>Soporte</th><th>Aprobaciones</th><th>Banco</th><th>Estado</th><th>Pago</th><th>Fact.def.</th><th>Acción</th><th>Ver</th></tr></thead>
         <tbody>${vis.map(o=>`<tr>
           <td style="font-weight:600;color:var(--blue);font-family:var(--mono)">${o.consecutivo}</td>
-          <td>${RLBL[o.creadoPor]||o.creadoPor}</td><td>${o.proveedor}</td><td>${o.nit||'—'}</td>
+          <td>${o.proveedor}<span class="sub">${RLBL[o.creadoPor]||o.creadoPor}${o.nit?' · '+o.nit:''}</span></td>
           <td>${fmt((o.totalBruto||0)+(o.iva||0))}</td>
-          <td style="color:var(--text3)">${fmt(o.retefuente1||0)}</td>
-          <td style="color:var(--text3)">${fmt(o.retefuente2||0)}</td>
+          <td style="color:var(--text3)">R1 ${fmt(o.retefuente1||0)}<span class="sub">R2 ${fmt(o.retefuente2||0)}</span></td>
           <td style="font-weight:600">${fmt(o.totalPagar||0)}</td>
           <td>${o.tipoSoporte?`<span class="badge ${o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac'}">${o.tipoSoporte}</span>`:'—'}</td>
-          <td>${o.aprobacionDOFecha?`<span class="badge b-approved">✓ ${fmtD(o.aprobacionDOFecha)}</span>`:'—'}</td>
-          <td>${o.aprobacionDPFecha?`<span class="badge b-approved">✓ ${fmtD(o.aprobacionDPFecha)}</span>`:'—'}</td>
-          <td>${o.entidadBancaria?`<span style="font-size:11px">${o.entidadBancaria}<br>${o.tipoCuenta} ${o.numeroCuenta}</span>`:`<button class="btn btn-sm" style="font-size:11px" onclick="editBanco('${o._id}')"><i class="ti ti-pencil"></i> Agregar</button>`}</td>
+          <td>${o.aprobacionDOFecha?`<span class="badge b-approved">✓ D.Obra</span>`:'— D.Obra'}<span class="sub">${o.aprobacionDPFecha?`✓ D.Proy. ${fmtD(o.aprobacionDPFecha)}`:'— D.Proy.'}</span></td>
+          <td>${o.entidadBancaria?`<span style="font-size:10.5px">${o.entidadBancaria}<br>${o.tipoCuenta} ${o.numeroCuenta}</span>`:`<button class="btn btn-sm" style="font-size:10.5px" onclick="editBanco('${o._id}')"><i class="ti ti-pencil"></i> Agregar</button>`}</td>
           <td>${bdg(o.estado)}</td>
-          <td>${o.fechaPago?fmtD(o.fechaPago):'—'}</td>
-          <td>${o.valorPagado?fmt(o.valorPagado):'—'}</td>
+          <td>${o.fechaPago?fmtD(o.fechaPago):'—'}${o.valorPagado?`<span class="sub">${fmt(o.valorPagado)}</span>`:''}</td>
           <td>${factDef(o)}</td>
           <td>${accionFin(o)}</td>
           <td><button class="btn btn-sm" onclick="verDetalleFin('${o._id}')"><i class="ti ti-eye"></i> Ver</button></td>
@@ -1126,7 +1147,7 @@ async function confPago(aid){
 }
 async function reportePagos(){
   const all=await atGet();
-  const xp=all.filter(o=>o.estado==='Por pagar');
+  const xp=ordenarPorConsecutivo(all.filter(o=>o.estado==='Por pagar'));
   if(!xp.length){alert('No hay órdenes "Por pagar".');return}
   const fecha=new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
   let html=`<html><head><style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}h2{color:#1F2D3D;font-size:14px;margin-bottom:4px}.sub{color:#666;font-size:11px;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1F2D3D;color:#fff;padding:7px 8px;text-align:left}td{padding:6px 8px;border-bottom:.5px solid #ddd}tr:nth-child(even) td{background:#F9F9F9}.tr{font-weight:bold;background:#E6F1FB;border-top:2px solid #185FA5}.ret{color:#888}a{color:#185FA5;font-size:10px}</style></head><body>
@@ -1143,7 +1164,7 @@ async function renderCTH(){
   document.getElementById('cth-contenido').innerHTML=spin('Cargando...');
   try{
     const all=await atGet();
-    const todas=all.filter(o=>o.estado!=='Elaborada');
+    const todas=ordenarPorConsecutivo(all.filter(o=>o.estado!=='Elaborada'),true);
     const pag=all.filter(o=>o.estado==='Pagada');
     const xp=all.filter(o=>o.estado==='Por pagar');
     const enP=all.filter(o=>['En proceso Finanzas','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado));
@@ -1326,7 +1347,7 @@ async function showTodasOrdenes(rol){
   document.getElementById(rol+'-lista-ct').innerHTML=spin('Cargando todas las órdenes...');
   try{
     const all=await atGet();
-    const visibles=all.filter(o=>o.creadoPor==='residente'||o.creadoPor==='sst');
+    const visibles=ordenarPorConsecutivo(all.filter(o=>o.creadoPor==='residente'||o.creadoPor==='sst'),true);
     if(!visibles.length){document.getElementById(rol+'-lista-ct').innerHTML='<p class="muted">No hay órdenes aún.</p>';return;}
     window['_ordenes_todas_'+rol]=visibles;
     renderTablaTodasOrdenes(rol,visibles);
