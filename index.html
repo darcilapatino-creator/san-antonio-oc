@@ -270,6 +270,33 @@ async function cargarProveedores(){
   }catch(e){console.error('Error cargando proveedores:',e);return[];}
 }
 
+// Busca en el maestro de Proveedores por NIT (preferido) o por nombre exacto
+function buscarProveedor(provs,nombre,nit){
+  if(nit){
+    const m=provs.find(p=>(p['NIT']||'').trim()===String(nit).trim());
+    if(m)return m;
+  }
+  if(nombre){
+    const nlow=nombre.trim().toLowerCase();
+    return provs.find(p=>(p['Nombre']||'').trim().toLowerCase()===nlow)||null;
+  }
+  return null;
+}
+// Guarda/actualiza los datos bancarios en el maestro de Proveedores para que se reutilicen automaticamente
+async function guardarBancoProveedor(nombre,nit,entidad,tipoCuenta,numCuenta){
+  try{
+    const provs=await cargarProveedores();
+    const match=buscarProveedor(provs,nombre,nit);
+    const fields={'Entidad bancaria':entidad,'Tipo de cuenta':tipoCuenta,'Número de cuenta':numCuenta};
+    if(match){
+      await atPatchProveedor(match._id,fields);
+    }else if(nombre){
+      await atCreateProveedor({...fields,'Nombre':nombre,'NIT':nit||''});
+    }
+    proveedoresCache=[];
+  }catch(e){console.error('Error guardando banco en proveedor maestro:',e);}
+}
+
 
 const fmt=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0);
 const fmtD=iso=>iso?new Date(iso+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'—';
@@ -933,6 +960,21 @@ async function renderFin(){
   document.getElementById('fin-contenido').innerHTML=spin('Cargando tabla de control...');
   try{
     const all=await atGet();
+    // Auto-completar datos bancarios desde el maestro de Proveedores si la orden aun no los tiene
+    const provs=await cargarProveedores();
+    const pendientes=[];
+    all.forEach(o=>{
+      if(!o.entidadBancaria){
+        const m=buscarProveedor(provs,o.proveedor,o.nit);
+        if(m&&m['Entidad bancaria']){
+          o.entidadBancaria=m['Entidad bancaria'];
+          o.tipoCuenta=m['Tipo de cuenta']||'';
+          o.numeroCuenta=m['Número de cuenta']||'';
+          pendientes.push(atPatch(o._id,{entidadBancaria:o.entidadBancaria,tipoCuenta:o.tipoCuenta,numeroCuenta:o.numeroCuenta}).catch(e=>console.error('Error auto-completando banco:',e)));
+        }
+      }
+    });
+    if(pendientes.length)await Promise.all(pendientes);
     const enP=all.filter(o=>o.estado==='En proceso Finanzas');
     const xPag=all.filter(o=>o.estado==='Por pagar');
     const pag=all.filter(o=>o.estado==='Pagada');
@@ -952,6 +994,7 @@ async function renderFin(){
     </div>
     <div style="display:flex;gap:10px;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-excel" onclick="reportePagos()"><i class="ti ti-file-spreadsheet"></i> Generar reporte de pagos</button>
+      <button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
       <button class="btn" onclick="renderFin()"><i class="ti ti-refresh"></i> Actualizar</button>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:1rem;align-items:center">
@@ -1100,7 +1143,13 @@ async function saveBanco(aid){
   const e=document.getElementById('be').value,t=document.getElementById('bt').value,n=document.getElementById('bn').value;
   if(!e||!t||!n){alert('Completa todos los datos bancarios');return}
   document.getElementById('bsav').style.display='flex';
-  try{await atPatch(aid,{entidadBancaria:e,tipoCuenta:t,numeroCuenta:n});document.getElementById('fin-banco').innerHTML='';renderFin();}
+  try{
+    await atPatch(aid,{entidadBancaria:e,tipoCuenta:t,numeroCuenta:n});
+    // Alimenta el maestro de Proveedores para que las proximas ordenes de este proveedor tomen el dato automaticamente
+    const all=await atGet();const o=all.find(x=>x._id===aid);
+    if(o)await guardarBancoProveedor(o.proveedor,o.nit,e,t,n);
+    document.getElementById('fin-banco').innerHTML='';renderFin();
+  }
   catch(err){alert('Error: '+err.message);document.getElementById('bsav').style.display='none';}
 }
 async function regFactDef(aid){
@@ -1178,6 +1227,7 @@ async function renderCTH(){
       <div class="stat-box"><div class="stat-label">Pre-fact. sin factura</div><div class="stat-val" style="color:${pfp.length?'#856404':'var(--green)'}">${pfp.length}</div></div>
     </div>
     <button class="btn" onclick="renderCTH()" style="margin-bottom:1rem"><i class="ti ti-refresh"></i> Actualizar</button>
+    <button class="btn btn-excel" onclick="exportarExcel()" style="margin-bottom:1rem;margin-left:8px"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
     <div style="display:flex;gap:8px;margin-bottom:1rem;align-items:center">
       <div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>
       <input class="field-input" id="cth-buscar" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarCTH()"></div>
@@ -1421,7 +1471,7 @@ function filtrarTodasOrdenes(rol){
 
 async function exportarExcel(){
   try{
-    const all=await atGet();
+    const all=ordenarPorConsecutivo(await atGet());
     if(!all.length){alert('No hay órdenes para exportar.');return;}
     // Build CSV with BOM for Excel
     const cols=['Consecutivo','Creado por','Tipo','Categoria','Proveedor','NIT','Fecha soporte','N° soporte','Tipo soporte','Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Aprobacion Dir. Obra','Aprobacion Dir. Proyecto','Registro Finanzas','Estado','Fecha pago','Valor pagado','Observaciones'];
