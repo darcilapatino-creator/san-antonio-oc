@@ -1040,14 +1040,15 @@ async function renderFin(){
       </table></div>`:'<p class="muted">No hay órdenes aún.</p>'}
     </div>
     <div id="fin-banco"></div>
+    <div id="fin-factdef"></div>
     <div id="fin-pago"></div>`;
   }catch(e){document.getElementById('fin-contenido').innerHTML=`<div class="alert alert-warning">Error: ${e.message}</div>`;}
 }
 
 function factDef(o){
   if(o.tipoSoporte!=='Pre-factura')return'<span class="muted" style="font-size:11px">N/A</span>';
-  if(o.facturaDefinitivaRecibida)return`<span class="badge b-approved">✓ ${fmtD(o.fechaFacturaDefinitiva)}</span>`;
-  if(o.estado==='Pagada')return`<button class="btn btn-sm btn-success" onclick="regFactDef('${o._id}')"><i class="ti ti-file-check"></i> Registrar</button>`;
+  if(o.facturaDefinitivaRecibida)return`<span class="badge b-approved">✓ ${fmtD(o.fechaFacturaDefinitiva)}</span>${o.enlaceSoporte?` <a href="${o.enlaceSoporte}" target="_blank" style="font-size:10.5px;color:var(--blue)">Ver</a>`:''} <button class="btn btn-sm" style="font-size:10px;padding:2px 6px" onclick="editFactDef('${o._id}')" title="Corregir"><i class="ti ti-pencil"></i></button>`;
+  if(o.estado==='Pagada')return`<button class="btn btn-sm btn-success" onclick="editFactDef('${o._id}')"><i class="ti ti-file-check"></i> Registrar</button>`;
   return`<span class="badge b-prefac">Pend. pago</span>`;
 }
 function accionFin(o){
@@ -1170,14 +1171,57 @@ async function saveBanco(aid){
   }
   catch(err){alert('Error: '+err.message);document.getElementById('bsav').style.display='none';}
 }
-async function regFactDef(aid){
+async function editFactDef(aid){
+  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const yaRecibida=o.facturaDefinitivaRecibida;
+  document.getElementById('fin-factdef').innerHTML=`
+  <div class="card" style="border:2px solid var(--blue)">
+    <div class="card-title"><i class="ti ti-file-check"></i> ${yaRecibida?'Corregir':'Registrar'} factura definitiva DIAN — ${o.consecutivo}</div>
+    ${yaRecibida?`<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Esta orden ya está marcada como recibida. Corrige el número/enlace/fecha con los datos reales, o usa "Quitar registro" si se marcó por error.</div>`:`<div class="alert alert-info"><i class="ti ti-info-circle"></i> Pega el enlace del documento (Drive, correo, etc.) de la factura definitiva ya emitida por el proveedor. No marques esto hasta tener el documento real en mano.</div>`}
+    <div class="grid-2">
+      <div class="field-group"><label class="field-label">N° de factura DIAN *</label><input class="field-input" id="fd-num" value="${o.numSoporte||''}" placeholder="Ej: FE-0001234..."></div>
+      <div class="field-group"><label class="field-label">Fecha de la factura *</label><input class="field-input" type="date" id="fd-fecha" value="${o.fechaFacturaDefinitiva||today()}"></div>
+    </div>
+    <div class="field-group"><label class="field-label">Enlace a la factura definitiva</label><input class="field-input" id="fd-link" value="${o.enlaceSoporte||''}" placeholder="https://drive.google.com/..."></div>
+    <div class="actions">
+      <button class="btn btn-success" onclick="saveFactDef('${aid}')"><i class="ti ti-check"></i> Guardar</button>
+      ${yaRecibida?`<button class="btn btn-danger" onclick="quitarFactDef('${aid}')"><i class="ti ti-x"></i> Quitar registro (se marcó por error)</button>`:''}
+      <button class="btn" onclick="document.getElementById('fin-factdef').innerHTML=''">Cancelar</button>
+    </div>
+    <div id="fdsav" style="display:none" class="loading"><div class="spinner"></div> Guardando...</div>
+  </div>`;
+  document.getElementById('fin-factdef').scrollIntoView({behavior:'smooth'});
+}
+async function saveFactDef(aid){
+  const num=document.getElementById('fd-num').value.trim();
+  const fecha=document.getElementById('fd-fecha').value;
+  const link=document.getElementById('fd-link').value.trim();
+  if(!num||!fecha){alert('Completa el número y la fecha de la factura.');return}
+  document.getElementById('fdsav').style.display='flex';
   try{
     const all=await atGet();const o=all.find(x=>x._id===aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
-    coms.push({quien:'Finanzas',accion:'Factura definitiva recibida',fecha:today()});
-    await atPatch(aid,{facturaDefinitivaRecibida:true,fechaFacturaDefinitiva:today(),comentariosJson:JSON.stringify(coms)});
-    renderFin();
-  }catch(e){alert('Error: '+e.message);}
+    coms.push({quien:'Finanzas',accion:(o.facturaDefinitivaRecibida?'Factura definitiva corregida':'Factura definitiva DIAN registrada')+' — N° '+num,fecha:today()});
+    await atPatch(aid,{
+      facturaDefinitivaRecibida:true,
+      fechaFacturaDefinitiva:fecha,
+      numSoporte:num,
+      enlaceSoporte:link||o.enlaceSoporte,
+      comentariosJson:JSON.stringify(coms)
+    });
+    document.getElementById('fin-factdef').innerHTML='';renderFin();
+  }catch(e){alert('Error: '+e.message);document.getElementById('fdsav').style.display='none';}
+}
+async function quitarFactDef(aid){
+  if(!confirm('¿Confirmas quitar el registro de factura definitiva? Quedará pendiente de nuevo (el documento y número que ya tenía la orden NO se borran).'))return;
+  document.getElementById('fdsav').style.display='flex';
+  try{
+    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const coms=JSON.parse(o.comentariosJson||'[]');
+    coms.push({quien:'Finanzas',accion:'Factura definitiva: registro retirado (se había marcado por error)',fecha:today()});
+    await atPatch(aid,{facturaDefinitivaRecibida:false,fechaFacturaDefinitiva:'',comentariosJson:JSON.stringify(coms)});
+    document.getElementById('fin-factdef').innerHTML='';renderFin();
+  }catch(e){alert('Error: '+e.message);document.getElementById('fdsav').style.display='none';}
 }
 async function regPago(aid){
   const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
