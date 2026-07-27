@@ -323,7 +323,7 @@ const mesPago=iso=>iso?iso.substring(0,7):'';
 const spin=msg=>`<div class="loading"><div class="spinner"></div>${msg||'Cargando...'}</div>`;
 
 function bdg(e){
-  const m={'Elaborada':'b-pending','Pendiente aprobación Dir. Obra':'b-review','Pendiente aprobación Dir. Proyecto':'b-review','En proceso Finanzas':'b-finance','Por pagar':'b-pending','Pagada':'b-paid','Rechazada':'b-rejected'};
+  const m={'Elaborada':'b-pending','Pendiente aprobación Dir. Obra':'b-review','Pendiente aprobación Dir. Proyecto':'b-review','En proceso Finanzas':'b-finance','Por pagar':'b-pending','Pagada':'b-paid','Rechazada':'b-rejected','Anulada':'b-rejected'};
   return`<span class="badge ${m[e]||'b-pending'}">${e}</span>`;
 }
 function lnk(url,lbl){
@@ -956,6 +956,23 @@ async function rechazar(aid,quien,label){
   }catch(e){alert('Error: '+e.message);}
 }
 
+// Anula una orden ya aprobada (p. ej. duplicada por error). Requiere motivo y queda en el historial para trazabilidad.
+async function anularOrden(aid,origen){
+  const motivo=document.getElementById('fin-anular-com')?.value||'';
+  if(!motivo.trim()){alert('Escribe el motivo de la anulación antes de continuar.');return}
+  if(!confirm('¿Confirmas anular la orden '+(document.getElementById('fin-anular-com')?.dataset.consec||'')+'? Esta acción no se puede deshacer desde el sistema.'))return;
+  document.getElementById('fin-anular-sav').style.display='flex';
+  try{
+    const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+    const estadoAnterior=o.estado;
+    const coms=JSON.parse(o.comentariosJson||'[]');
+    coms.push({quien:'Finanzas',accion:'Anulada (estado previo: '+estadoAnterior+')',comentario:motivo,fecha:today()});
+    await atPatch(aid,{estado:'Anulada',comentariosJson:JSON.stringify(coms)});
+    alert('Orden anulada correctamente.');
+    if(origen==='cth')renderCTH();else renderFin();
+  }catch(e){alert('Error: '+e.message);document.getElementById('fin-anular-sav').style.display='none';}
+}
+
 async function renderFin(){
   document.getElementById('fin-contenido').innerHTML=spin('Cargando tabla de control...');
   try{
@@ -1037,6 +1054,7 @@ function accionFin(o){
   if(o.estado==='En proceso Finanzas')return`<button class="btn btn-dark btn-sm" onclick="procFin('${o._id}')"><i class="ti ti-check"></i> Procesar</button>`;
   if(o.estado==='Por pagar')return`<button class="btn btn-success btn-sm" onclick="regPago('${o._id}')"><i class="ti ti-cash"></i> Pago</button>`;
   if(o.estado==='Pagada')return`<span class="badge b-paid">✓ Pagada</span>`;
+  if(o.estado==='Anulada')return`<span class="badge b-rejected">✗ Anulada</span>`;
   return'—';
 }
 async function procFin(aid){
@@ -1334,6 +1352,14 @@ async function verDetalleFin(aid){
     const bPago=document.createElement('button');bPago.className='btn btn-success';
     bPago.innerHTML='<i class="ti ti-cash"></i> Registrar pago';
     bPago.onclick=function(){document.getElementById('fin-contenido').appendChild(cardDiv);regPago(aid);};actDiv.appendChild(bPago);
+  }
+  if(['En proceso Finanzas','Por pagar'].includes(o.estado)){
+    const anLbl=document.createElement('div');anLbl.className='card-title';anLbl.style.marginTop='16px';anLbl.innerHTML='<i class="ti ti-x"></i> Anular orden (p. ej. duplicada por error)';cardDiv.appendChild(anLbl);
+    const ta=document.createElement('textarea');ta.className='field-input';ta.id='fin-anular-com';ta.dataset.consec=o.consecutivo;ta.placeholder='Motivo de la anulación (obligatorio)...';cardDiv.appendChild(ta);
+    const bAnular=document.createElement('button');bAnular.className='btn btn-danger';bAnular.style.marginTop='8px';
+    bAnular.innerHTML='<i class="ti ti-x"></i> Anular esta orden';
+    bAnular.onclick=function(){anularOrden(aid,'fin');};actDiv.appendChild(bAnular);
+    const savAn=document.createElement('div');savAn.id='fin-anular-sav';savAn.style.display='none';savAn.className='loading';savAn.innerHTML='<div class="spinner"></div> Anulando...';cardDiv.appendChild(savAn);
   }
   const bVolver=document.createElement('button');bVolver.className='btn';
   bVolver.innerHTML='<i class="ti ti-arrow-left"></i> Volver';
