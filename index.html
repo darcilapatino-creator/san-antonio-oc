@@ -1042,6 +1042,7 @@ async function renderFin(){
     <div id="fin-banco"></div>
     <div id="fin-factdef"></div>
     <div id="fin-socpago"></div>
+    <div id="fin-corr"></div>
     <div id="fin-pago"></div>`;
   }catch(e){document.getElementById('fin-contenido').innerHTML=`<div class="alert alert-warning">Error: ${e.message}</div>`;}
 }
@@ -1265,7 +1266,58 @@ async function confPago(aid){
     document.getElementById('fin-pago').innerHTML='';renderFin();
   }catch(e){alert('Error: '+e.message);document.getElementById('psav').style.display='none';}
 }
-// Permite asignar/corregir la sociedad de pago en órdenes ya pagadas (registro retroactivo)
+// Permite a Finanzas corregir bruto, IVA o retenciones de una orden ya aprobada (ej. error de digitación del residente, o error propio en retenciones)
+async function abrirCorregirValores(aid){
+  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const bruto=o.totalBruto||0,iva=o.iva||0,ret1=o.retefuente1||0,ret2=o.retefuente2||0;
+  document.getElementById('fin-corr').innerHTML=`
+  <div class="card" style="border:2px solid var(--dark)">
+    <div class="card-title"><i class="ti ti-edit"></i> Corregir valores — ${o.consecutivo}</div>
+    <div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Este ajuste queda registrado en el historial de la orden con el motivo que escribas.</div>
+    <div class="grid-2">
+      <div class="field-group"><label class="field-label">Total bruto *</label><input class="field-input" type="number" id="cv-bruto" value="${bruto}"></div>
+      <div class="field-group"><label class="field-label">IVA *</label><input class="field-input" type="number" id="cv-iva" value="${iva}"></div>
+      <div class="field-group"><label class="field-label">Retefuente 1</label><input class="field-input" type="number" id="cv-ret1" value="${ret1}"></div>
+      <div class="field-group"><label class="field-label">Retefuente 2</label><input class="field-input" type="number" id="cv-ret2" value="${ret2}"></div>
+    </div>
+    <div style="background:var(--gray1);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;font-weight:600;font-size:15px">
+      <span>Neto a pagar</span><span id="cv-neto" style="color:var(--blue)">${fmt(bruto+iva-ret1-ret2)}</span>
+    </div>
+    <div class="field-group"><label class="field-label">Motivo de la corrección *</label><textarea class="field-input" id="cv-motivo" placeholder="Ej: Residente digitó $X en vez de $Y según factura recibida..."></textarea></div>
+    <div class="actions">
+      <button class="btn btn-dark" onclick="guardarCorregirValores('${aid}')"><i class="ti ti-check"></i> Guardar corrección</button>
+      <button class="btn" onclick="document.getElementById('fin-corr').innerHTML=''">Cancelar</button>
+    </div>
+    <div id="cvsav" style="display:none" class="loading"><div class="spinner"></div> Guardando...</div>
+  </div>`;
+  ['cv-bruto','cv-iva','cv-ret1','cv-ret2'].forEach(function(id){
+    document.getElementById(id).addEventListener('input',function(){
+      const b=parseFloat(document.getElementById('cv-bruto').value)||0;
+      const i=parseFloat(document.getElementById('cv-iva').value)||0;
+      const r1=parseFloat(document.getElementById('cv-ret1').value)||0;
+      const r2=parseFloat(document.getElementById('cv-ret2').value)||0;
+      document.getElementById('cv-neto').textContent=fmt(b+i-r1-r2);
+    });
+  });
+  document.getElementById('fin-corr').scrollIntoView({behavior:'smooth'});
+}
+async function guardarCorregirValores(aid){
+  const bruto=parseFloat(document.getElementById('cv-bruto').value)||0;
+  const iva=parseFloat(document.getElementById('cv-iva').value)||0;
+  const ret1=parseFloat(document.getElementById('cv-ret1').value)||0;
+  const ret2=parseFloat(document.getElementById('cv-ret2').value)||0;
+  const motivo=document.getElementById('cv-motivo').value.trim();
+  if(!motivo){alert('Escribe el motivo de la corrección antes de guardar.');return}
+  const neto=bruto+iva-ret1-ret2;
+  document.getElementById('cvsav').style.display='flex';
+  try{
+    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const coms=JSON.parse(o.comentariosJson||'[]');
+    coms.push({quien:'Finanzas',accion:`Valores corregidos — Bruto: ${fmt(bruto)} · IVA: ${fmt(iva)} · Ret1: ${fmt(ret1)} · Ret2: ${fmt(ret2)} · Neto: ${fmt(neto)}`,comentario:motivo,fecha:today()});
+    await atPatch(aid,{totalBruto:bruto,iva:iva,retefuente1:ret1,retefuente2:ret2,totalPagar:neto,comentariosJson:JSON.stringify(coms)});
+    document.getElementById('fin-corr').innerHTML='';renderFin();
+  }catch(e){alert('Error: '+e.message);document.getElementById('cvsav').style.display='none';}
+}
 async function editSociedadPago(aid){
   const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
   document.getElementById('fin-socpago').innerHTML=`
@@ -1436,6 +1488,13 @@ async function verDetalleFin(aid){
     const bPago=document.createElement('button');bPago.className='btn btn-success';
     bPago.innerHTML='<i class="ti ti-cash"></i> Registrar pago';
     bPago.onclick=function(){document.getElementById('fin-contenido').appendChild(cardDiv);regPago(aid);};actDiv.appendChild(bPago);
+  }
+  if(['En proceso Finanzas','Por pagar'].includes(o.estado)){
+    const corrLbl=document.createElement('div');corrLbl.className='card-title';corrLbl.style.marginTop='16px';corrLbl.innerHTML='<i class="ti ti-edit"></i> Corregir bruto, IVA o retenciones';cardDiv.appendChild(corrLbl);
+    const pCorr=document.createElement('p');pCorr.className='muted';pCorr.style.fontSize='12px';pCorr.textContent='Úsalo si el residente digitó un valor mal, o si necesitas ajustar las retenciones ya procesadas.';cardDiv.appendChild(pCorr);
+    const bCorr=document.createElement('button');bCorr.className='btn btn-primary';
+    bCorr.innerHTML='<i class="ti ti-edit"></i> Corregir valores';
+    bCorr.onclick=function(){abrirCorregirValores(aid);};actDiv.appendChild(bCorr);
   }
   if(['En proceso Finanzas','Por pagar'].includes(o.estado)){
     const anLbl=document.createElement('div');anLbl.className='card-title';anLbl.style.marginTop='16px';anLbl.innerHTML='<i class="ti ti-x"></i> Anular orden (p. ej. duplicada por error)';cardDiv.appendChild(anLbl);
