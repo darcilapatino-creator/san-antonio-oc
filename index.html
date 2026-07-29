@@ -271,7 +271,7 @@ async function cargarProveedores(){
 }
 
 // Busca en el maestro de Proveedores por NIT (preferido) o por nombre exacto
-function buscarProveedor(provs,nombre,nit){
+function buscarProveedorBanco(provs,nombre,nit){
   if(nit){
     const m=provs.find(p=>(p['NIT']||'').trim()===String(nit).trim());
     if(m)return m;
@@ -286,7 +286,7 @@ function buscarProveedor(provs,nombre,nit){
 async function guardarBancoProveedor(nombre,nit,entidad,tipoCuenta,numCuenta){
   try{
     const provs=await cargarProveedores();
-    const match=buscarProveedor(provs,nombre,nit);
+    const match=buscarProveedorBanco(provs,nombre,nit);
     const fields={'Entidad bancaria':entidad,'Tipo de cuenta':tipoCuenta,'Número de cuenta':numCuenta};
     if(match){
       await atPatchProveedor(match._id,fields);
@@ -982,7 +982,7 @@ async function renderFin(){
     const pendientes=[];
     all.forEach(o=>{
       if(!o.entidadBancaria){
-        const m=buscarProveedor(provs,o.proveedor,o.nit);
+        const m=buscarProveedorBanco(provs,o.proveedor,o.nit);
         if(m&&m['Entidad bancaria']){
           o.entidadBancaria=m['Entidad bancaria'];
           o.tipoCuenta=m['Tipo de cuenta']||'';
@@ -1032,7 +1032,7 @@ async function renderFin(){
           <td>${o.aprobacionDOFecha?`<span class="badge b-approved">✓ D.Obra</span>`:'— D.Obra'}<span class="sub">${o.aprobacionDPFecha?`✓ D.Proy. ${fmtD(o.aprobacionDPFecha)}`:'— D.Proy.'}</span></td>
           <td>${o.entidadBancaria?`<span style="font-size:10.5px">${o.entidadBancaria}<br>${o.tipoCuenta} ${o.numeroCuenta}</span>`:`<button class="btn btn-sm" style="font-size:10.5px" onclick="editBanco('${o._id}')"><i class="ti ti-pencil"></i> Agregar</button>`}</td>
           <td>${bdg(o.estado)}</td>
-          <td>${o.fechaPago?fmtD(o.fechaPago):'—'}${o.valorPagado?`<span class="sub">${fmt(o.valorPagado)}</span>`:''}</td>
+          <td>${o.fechaPago?fmtD(o.fechaPago):'—'}${o.valorPagado?`<span class="sub">${fmt(o.valorPagado)}</span>`:''}${o.sociedadPago?`<span class="sub" style="font-weight:600;color:${o.sociedadPago==='HABI+TAD'?'var(--blue)':'#8B5CF6'}">${o.sociedadPago}</span>`:''}</td>
           <td>${factDef(o)}</td>
           <td>${accionFin(o)}</td>
           <td><button class="btn btn-sm" onclick="verDetalleFin('${o._id}')"><i class="ti ti-eye"></i> Ver</button></td>
@@ -1234,6 +1234,13 @@ async function regPago(aid){
       <div class="field-group"><label class="field-label">Fecha de pago *</label><input class="field-input" type="date" id="pf" value="${today()}"></div>
       <div class="field-group"><label class="field-label">Valor pagado *</label><input class="field-input" type="number" id="pv" value="${o.totalPagar||0}"></div>
     </div>
+    <div class="field-group"><label class="field-label">Sociedad que realizó el pago *</label>
+      <select class="field-input" id="psoc">
+        <option value="">Seleccionar</option>
+        <option value="HABI+TAD" ${o.sociedadPago==='HABI+TAD'?'selected':''}>HABI+TAD</option>
+        <option value="CONSTRUCTHOR" ${o.sociedadPago==='CONSTRUCTHOR'?'selected':''}>CONSTRUCTHOR</option>
+      </select>
+    </div>
     <div class="field-group"><label class="field-label">Referencia de pago</label><input class="field-input" id="pr" placeholder="Transferencia, cheque No..."></div>
     <div class="field-group"><label class="field-label">Enlace al comprobante</label><input class="field-input" id="pc" placeholder="https://drive.google.com/..."></div>
     <div class="actions">
@@ -1245,14 +1252,15 @@ async function regPago(aid){
   document.getElementById('fin-pago').scrollIntoView({behavior:'smooth'});
 }
 async function confPago(aid){
-  const fecha=document.getElementById('pf').value,valor=parseFloat(document.getElementById('pv').value),ref=document.getElementById('pr').value,comp=document.getElementById('pc').value;
+  const fecha=document.getElementById('pf').value,valor=parseFloat(document.getElementById('pv').value),soc=document.getElementById('psoc').value,ref=document.getElementById('pr').value,comp=document.getElementById('pc').value;
   if(!fecha||!valor){alert('Completa fecha y valor');return}
+  if(!soc){alert('Selecciona qué sociedad realizó el pago (HABI+TAD o CONSTRUCTHOR)');return}
   document.getElementById('psav').style.display='flex';
   try{
     const all=await atGet();const o=all.find(x=>x._id===aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
-    coms.push({quien:'Finanzas',accion:`Pago registrado — ${fmt(valor)}`,fecha});
-    await atPatch(aid,{estado:'Pagada',fechaPago:fecha,valorPagado:valor,referenciaPago:ref,comprobante:comp||'',comentariosJson:JSON.stringify(coms)});
+    coms.push({quien:'Finanzas',accion:`Pago registrado — ${fmt(valor)} · Pagó ${soc}`,fecha});
+    await atPatch(aid,{estado:'Pagada',fechaPago:fecha,valorPagado:valor,sociedadPago:soc,referenciaPago:ref,comprobante:comp||'',comentariosJson:JSON.stringify(coms)});
     document.getElementById('fin-pago').innerHTML='';renderFin();
   }catch(e){alert('Error: '+e.message);document.getElementById('psav').style.display='none';}
 }
@@ -1318,7 +1326,7 @@ async function renderCTH(){
         <div class="check-row"><i class="ti ${o.enlaceSoporte?'ti-circle-check ck-ok':'ti-circle-dashed ck-no'}"></i><span>Documento soporte</span><span style="margin-left:auto">${lnk(o.enlaceSoporte,'Ver')}</span></div>
         <div class="check-row"><i class="ti ${o.enlaceRut?'ti-circle-check ck-ok':'ti-circle-dashed ck-no'}"></i><span>RUT</span><span style="margin-left:auto">${lnk(o.enlaceRut,'Ver RUT')}</span></div>
         <div class="check-row"><i class="ti ${o.enlaceCertBancaria?'ti-circle-check ck-ok':'ti-circle-dashed ck-no'}"></i><span>Certificación bancaria</span><span style="margin-left:auto">${lnk(o.enlaceCertBancaria,'Ver')}</span></div>
-        <div class="check-row"><i class="ti ${o.estado==='Pagada'?'ti-circle-check ck-ok':'ti-circle-dashed ck-no'}"></i><span style="font-weight:${o.estado==='Pagada'?'600':'400'}">Pago registrado</span><span class="muted" style="margin-left:auto">${o.fechaPago?`${fmtD(o.fechaPago)} · ${fmt(o.valorPagado)}`:'Pendiente'}</span></div>
+        <div class="check-row"><i class="ti ${o.estado==='Pagada'?'ti-circle-check ck-ok':'ti-circle-dashed ck-no'}"></i><span style="font-weight:${o.estado==='Pagada'?'600':'400'}">Pago registrado</span><span class="muted" style="margin-left:auto">${o.fechaPago?`${fmtD(o.fechaPago)} · ${fmt(o.valorPagado)}${o.sociedadPago?' · Pagó '+o.sociedadPago:''}`:'Pendiente'}</span></div>
         ${o.tipoSoporte==='Pre-factura'?`<div class="check-row" style="border-bottom:none"><i class="ti ${o.facturaDefinitivaRecibida?'ti-circle-check ck-ok':'ti-circle-dashed ck-no'}"></i><span style="color:${o.facturaDefinitivaRecibida?'var(--green)':'#856404'}">Factura definitiva DIAN</span><span class="muted" style="margin-left:auto">${o.facturaDefinitivaRecibida?fmtD(o.fechaFacturaDefinitiva):'Pendiente'}</span></div>`:''}
       </div>
       ${o.comprobante?`<div style="margin-top:10px"><a href="${o.comprobante}" target="_blank" class="btn btn-sm"><i class="ti ti-external-link"></i> Ver comprobante</a></div>`:''}
@@ -1544,7 +1552,7 @@ async function exportarExcel(){
     const all=ordenarPorConsecutivo(await atGet());
     if(!all.length){alert('No hay órdenes para exportar.');return;}
     // Build CSV with BOM for Excel
-    const cols=['Consecutivo','Creado por','Tipo','Categoria','Proveedor','NIT','Fecha soporte','N° soporte','Tipo soporte','Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Aprobacion Dir. Obra','Aprobacion Dir. Proyecto','Registro Finanzas','Estado','Fecha pago','Valor pagado','Observaciones'];
+    const cols=['Consecutivo','Creado por','Tipo','Categoria','Proveedor','NIT','Fecha soporte','N° soporte','Tipo soporte','Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Aprobacion Dir. Obra','Aprobacion Dir. Proyecto','Registro Finanzas','Estado','Fecha pago','Valor pagado','Sociedad que pagó','Observaciones'];
     const rows=all.map(function(o){
       return [
         o.consecutivo||'',
@@ -1567,6 +1575,7 @@ async function exportarExcel(){
         o.estado||'',
         o.fechaPago||'',
         o.valorPagado||0,
+        o.sociedadPago||'',
         o.observaciones||''
       ].map(function(v){return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':v;}).join(';');
     });
