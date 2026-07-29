@@ -1476,7 +1476,8 @@ function filtrarCTH(){
 async function verDetalleFin(aid){
   document.getElementById('fin-contenido').innerHTML=spin('Cargando...');
   const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
-  document.getElementById('fin-contenido').innerHTML=detalle(o);
+  document.getElementById('fin-contenido').innerHTML=detalle(o)+
+    '<div id="fin-banco"></div><div id="fin-factdef"></div><div id="fin-socpago"></div><div id="fin-corr"></div><div id="fin-pago"></div>';
   const cardDiv=document.createElement('div');cardDiv.className='card';
   const actDiv=document.createElement('div');actDiv.className='actions';
   if(o.estado==='En proceso Finanzas'){
