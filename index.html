@@ -1351,6 +1351,8 @@ async function saveSociedadPago(aid){
   }catch(e){alert('Error: '+e.message);document.getElementById('spsav').style.display='none';}
 }
 async function reportePagos(){
+  const all=await atGet();
+  const xp=ordenarPorConsecutivo(all.filter(o=>o.estado==='Por pagar'));
   if(!xp.length){alert('No hay órdenes "Por pagar".');return}
   const fecha=new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
   let html=`<html><head><style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}h2{color:#1F2D3D;font-size:14px;margin-bottom:4px}.sub{color:#666;font-size:11px;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1F2D3D;color:#fff;padding:7px 8px;text-align:left}td{padding:6px 8px;border-bottom:.5px solid #ddd}tr:nth-child(even) td{background:#F9F9F9}.tr{font-weight:bold;background:#E6F1FB;border-top:2px solid #185FA5}.ret{color:#888}a{color:#185FA5;font-size:10px}</style></head><body>
