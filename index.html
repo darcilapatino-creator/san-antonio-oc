@@ -974,6 +974,7 @@ async function anularOrden(aid,origen){
 }
 
 async function renderFin(){
+  const mostrarTodas=document.getElementById('fin-vertodas')?.checked;
   document.getElementById('fin-contenido').innerHTML=spin('Cargando tabla de control...');
   try{
     const all=await atGet();
@@ -998,7 +999,7 @@ async function renderFin(){
     const pfp=all.filter(o=>o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida&&mesPago(o.fechaPago)<mesActual());
     const saldo=xPag.reduce((s,o)=>s+(o.totalPagar||0),0);
     const sinB=xPag.filter(o=>!o.entidadBancaria).length;
-    const vis=ordenarPorConsecutivo(all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)));
+    const vis=ordenarPorConsecutivo(mostrarTodas?all:all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)));
     document.getElementById('fin-contenido').innerHTML=
     prefAlerta(pfp)+
     (sinB?`<div class="prefac-alert"><div class="prefac-alert-title"><i class="ti ti-building-bank"></i> ${sinB} orden(es) sin datos bancarios</div></div>`:'')+
@@ -1018,6 +1019,7 @@ async function renderFin(){
       <div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>
       <input class="field-input" id="fin-buscar" placeholder="Buscar por proveedor, consecutivo, categoria..." style="padding-left:30px" oninput="filtrarFin()"></div>
     </div>
+    <div style="margin-bottom:1rem"><label style="font-size:12.5px;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="fin-vertodas" onchange="renderFin()" ${mostrarTodas?'checked':''}> Mostrar todas las órdenes (incluye pendientes de aprobación, rechazadas y anuladas) — para corregir errores de digitación</label></div>
     <div class="card">
       <div class="card-title"><i class="ti ti-table"></i> Tabla de control</div>
       ${vis.length?`<div class="table-wrap"><table class="table-fin">
@@ -1309,6 +1311,8 @@ async function guardarCorregirValores(aid){
   const motivo=document.getElementById('cv-motivo').value.trim();
   if(!motivo){alert('Escribe el motivo de la corrección antes de guardar.');return}
   const neto=bruto+iva-ret1-ret2;
+  const all0=await atGet();const o0=all0.find(x=>x._id===aid);
+  if(o0&&o0.estado==='Pagada'&&!confirm('Esta orden ya está PAGADA. ¿Confirmas que solo estás corrigiendo un error de digitación en el registro y no el valor realmente transferido?'))return;
   document.getElementById('cvsav').style.display='flex';
   try{
     const all=await atGet();const o=all.find(x=>x._id===aid);
@@ -1492,9 +1496,11 @@ async function verDetalleFin(aid){
     bPago.innerHTML='<i class="ti ti-cash"></i> Registrar pago';
     bPago.onclick=function(){document.getElementById('fin-contenido').appendChild(cardDiv);regPago(aid);};actDiv.appendChild(bPago);
   }
-  if(['En proceso Finanzas','Por pagar'].includes(o.estado)){
+  {
     const corrLbl=document.createElement('div');corrLbl.className='card-title';corrLbl.style.marginTop='16px';corrLbl.innerHTML='<i class="ti ti-edit"></i> Corregir bruto, IVA o retenciones';cardDiv.appendChild(corrLbl);
-    const pCorr=document.createElement('p');pCorr.className='muted';pCorr.style.fontSize='12px';pCorr.textContent='Úsalo si el residente digitó un valor mal, o si necesitas ajustar las retenciones ya procesadas.';cardDiv.appendChild(pCorr);
+    const pCorr=document.createElement('p');pCorr.className='muted';pCorr.style.fontSize='12px';
+    pCorr.textContent=o.estado==='Pagada'?'Esta orden ya fue pagada. Solo corrige aquí si fue un error de digitación en el registro (el pago real ya se hizo por el valor que se transfirió) — no cambia el dinero ya transferido, solo el dato en el sistema.':'Úsalo si el residente digitó un valor mal, o si necesitas ajustar las retenciones ya procesadas.';
+    cardDiv.appendChild(pCorr);
     const bCorr=document.createElement('button');bCorr.className='btn btn-primary';
     bCorr.innerHTML='<i class="ti ti-edit"></i> Corregir valores';
     bCorr.onclick=function(){abrirCorregirValores(aid);};actDiv.appendChild(bCorr);
