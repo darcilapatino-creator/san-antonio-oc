@@ -6,6 +6,7 @@
 <title>Sistema OC/OS — San Antonio · CONSTRUCTHOR</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --dark:#1F2D3D;--blue:#185FA5;--lblue:#D6E8F7;--white:#fff;
@@ -298,6 +299,8 @@ async function guardarBancoProveedor(nombre,nit,entidad,tipoCuenta,numCuenta){
 }
 
 
+// Redondea a 2 decimales evitando residuos de punto flotante (ej. 2305697.3600000002 -> 2305697.36)
+function redondear2(n){n=Number(n)||0;return Math.round((n+Number.EPSILON)*100)/100;}
 const fmt=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0);
 const fmtD=iso=>iso?new Date(iso+'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'}):'—';
 // Extrae el numero secuencial de un consecutivo tipo "OC-2026-001 · Prov · Cat"
@@ -579,8 +582,8 @@ function getItems(rol){
     const ins=tr.querySelectorAll('input');
     const desc=ins[0]?.value||'',cant=parseFloat(ins[1]?.value)||0,und=ins[2]?.value||'',vr=parseFloat(ins[3]?.value)||0;
     const aplicaIva=(tr.querySelector('[data-iva]')?.value||'si')==='si';
-    const vrBruto=cant*vr;
-    if(desc||cant||vr)items.push({desc,cant,unidad:und,vrUnitario:vr,vrBruto,iva:aplicaIva?vrBruto*.19:0,aplicaIva});
+    const vrBruto=redondear2(cant*vr);
+    if(desc||cant||vr)items.push({desc,cant,unidad:und,vrUnitario:vr,vrBruto,iva:aplicaIva?redondear2(vrBruto*.19):0,aplicaIva});
   });
   return items;
 }
@@ -597,7 +600,7 @@ async function guardarOC(rol){
   const sop=document.getElementById(`${rol}-soporte`).value;
   if(!tipo||!cat||!prov||!sop){alert('Completa: Tipo, Categoría, Proveedor y Tipo de soporte');return}
   const items=getItems(rol);
-  const bruto=items.reduce((s,i)=>s+i.vrBruto,0),iva=items.reduce((s,i)=>s+(i.iva||0),0);
+  const bruto=redondear2(items.reduce((s,i)=>s+i.vrBruto,0)),iva=redondear2(items.reduce((s,i)=>s+(i.iva||0),0));
   const slink=document.getElementById(`${rol}-slink`).value||'';
   const rut=document.getElementById(`${rol}-rut`).value||'';
   const banco=document.getElementById(`${rol}-banco`).value||'';
@@ -625,8 +628,8 @@ async function guardarOC(rol){
         observaciones:document.getElementById(`${rol}-obs`).value||'',
         tipoSoporte:sop,fechaSoporte:document.getElementById(`${rol}-fecha-soporte`)?.value||'',numSoporte:document.getElementById(`${rol}-num-soporte`)?.value||'',enlaceSoporte:slink,enlaceRut:rut,enlaceCertBancaria:banco,
         itemsJson:JSON.stringify(items),
-        totalBruto:bruto,iva,retefuente1:bruto*.04,retefuente2:bruto*.01,
-        totalPagar:bruto+iva-bruto*.04-bruto*.01,
+        totalBruto:bruto,iva,retefuente1:redondear2(bruto*.04),retefuente2:redondear2(bruto*.01),
+        totalPagar:redondear2(bruto+iva-bruto*.04-bruto*.01),
         estado:'Elaborada',fechaCreacion:today(),creadoPor:rol,
         comentariosJson:'[]',facturaDefinitivaRecibida:false,
         entidadBancaria:'',tipoCuenta:'',numeroCuenta:''
@@ -637,7 +640,7 @@ async function guardarOC(rol){
     }else{
       record=await atPatch(ocActual._id,{
         itemsJson:JSON.stringify(items),totalBruto:bruto,iva,
-        retefuente1:bruto*.04,retefuente2:bruto*.01,totalPagar:bruto+iva-bruto*.04-bruto*.01,
+        retefuente1:redondear2(bruto*.04),retefuente2:redondear2(bruto*.01),totalPagar:redondear2(bruto+iva-bruto*.04-bruto*.01),
         observaciones:document.getElementById(`${rol}-obs`).value||'',
         tipoSoporte:sop,enlaceSoporte:slink,enlaceRut:rut,enlaceCertBancaria:banco
       });
@@ -1123,9 +1126,9 @@ async function procFin(aid){
 
 
 async function confirmarProcFin(aid, bruto, iva){
-  const ret1=parseFloat(document.getElementById('pf-ret1')?.value)||0;
-  const ret2=parseFloat(document.getElementById('pf-ret2')?.value)||0;
-  const neto=(bruto+iva)-ret1-ret2;
+  const ret1=redondear2(parseFloat(document.getElementById('pf-ret1')?.value)||0);
+  const ret2=redondear2(parseFloat(document.getElementById('pf-ret2')?.value)||0);
+  const neto=redondear2((bruto+iva)-ret1-ret2);
   document.getElementById('pf-sav').style.display='flex';
   try{
     const all=await atGet();const o=all.find(x=>x._id===aid);
@@ -1256,7 +1259,7 @@ async function regPago(aid){
   document.getElementById('fin-pago').scrollIntoView({behavior:'smooth'});
 }
 async function confPago(aid){
-  const fecha=document.getElementById('pf').value,valor=parseFloat(document.getElementById('pv').value),soc=document.getElementById('psoc').value,ref=document.getElementById('pr').value,comp=document.getElementById('pc').value;
+  const fecha=document.getElementById('pf').value,valor=redondear2(parseFloat(document.getElementById('pv').value)),soc=document.getElementById('psoc').value,ref=document.getElementById('pr').value,comp=document.getElementById('pc').value;
   if(!fecha||!valor){alert('Completa fecha y valor');return}
   if(!soc){alert('Selecciona qué sociedad realizó el pago (HABI+TAD o CONSTRUCTHOR)');return}
   document.getElementById('psav').style.display='flex';
@@ -1304,13 +1307,13 @@ async function abrirCorregirValores(aid){
   document.getElementById('fin-corr').scrollIntoView({behavior:'smooth'});
 }
 async function guardarCorregirValores(aid){
-  const bruto=parseFloat(document.getElementById('cv-bruto').value)||0;
-  const iva=parseFloat(document.getElementById('cv-iva').value)||0;
-  const ret1=parseFloat(document.getElementById('cv-ret1').value)||0;
-  const ret2=parseFloat(document.getElementById('cv-ret2').value)||0;
+  const bruto=redondear2(parseFloat(document.getElementById('cv-bruto').value)||0);
+  const iva=redondear2(parseFloat(document.getElementById('cv-iva').value)||0);
+  const ret1=redondear2(parseFloat(document.getElementById('cv-ret1').value)||0);
+  const ret2=redondear2(parseFloat(document.getElementById('cv-ret2').value)||0);
   const motivo=document.getElementById('cv-motivo').value.trim();
   if(!motivo){alert('Escribe el motivo de la corrección antes de guardar.');return}
-  const neto=bruto+iva-ret1-ret2;
+  const neto=redondear2(bruto+iva-ret1-ret2);
   const all0=await atGet();const o0=all0.find(x=>x._id===aid);
   if(o0&&o0.estado==='Pagada'&&!confirm('Esta orden ya está PAGADA. ¿Confirmas que solo estás corrigiendo un error de digitación en el registro y no el valor realmente transferido?'))return;
   document.getElementById('cvsav').style.display='flex';
@@ -1651,8 +1654,10 @@ async function exportarExcel(){
   try{
     const all=ordenarPorConsecutivo(await atGet());
     if(!all.length){alert('No hay órdenes para exportar.');return;}
-    // Build CSV with BOM for Excel
     const cols=['Consecutivo','Creado por','Tipo','Categoria','Proveedor','NIT','Fecha soporte','N° soporte','Tipo soporte','Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Aprobacion Dir. Obra','Aprobacion Dir. Proyecto','Registro Finanzas','Estado','Fecha pago','Valor pagado','Sociedad que pagó','Observaciones'];
+    // Columnas que SIEMPRE deben quedar como texto (nunca como número), para que Excel no las corrompa
+    // (NIT y N° de soporte pueden tener muchos dígitos, ceros a la izquierda, guiones o incluso enlaces)
+    const colsTexto=new Set(['Consecutivo','NIT','N° soporte']);
     const rows=all.map(function(o){
       return [
         o.consecutivo||'',
@@ -1677,17 +1682,25 @@ async function exportarExcel(){
         o.valorPagado||0,
         o.sociedadPago||'',
         o.observaciones||''
-      ].map(function(v){return typeof v==='string'?'"'+v.replace(/"/g,'""')+'"':v;}).join(';');
+      ];
     });
-    const bom=String.fromCharCode(0xFEFF);const csv=bom+cols.map(function(c){return '"'+c+'"';}).join(';')+'\n'+rows.join('\n');
-    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
+    const ws=XLSX.utils.aoa_to_sheet([cols,...rows]);
+    // Forzar tipo texto en las columnas sensibles, y formato numero con 2 decimales en las columnas de dinero
+    const colsDinero=new Set(['Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Valor pagado']);
+    cols.forEach(function(colName,ci){
+      if(!colsTexto.has(colName)&&!colsDinero.has(colName))return;
+      for(let ri=1;ri<=rows.length;ri++){
+        const addr=XLSX.utils.encode_cell({r:ri,c:ci});
+        const cell=ws[addr];if(!cell)continue;
+        if(colsTexto.has(colName)){cell.t='s';cell.v=String(cell.v);}
+        else if(colsDinero.has(colName)){cell.t='n';cell.z='#,##0.00';}
+      }
+    });
+    ws['!cols']=cols.map(function(c){return{wch:Math.max(12,c.length+2)};});
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Ordenes');
     const fecha=new Date().toISOString().split('T')[0];
-    a.download='OC-OS_SanAntonio_'+fecha+'.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    XLSX.writeFile(wb,'OC-OS_SanAntonio_'+fecha+'.xlsx');
   }catch(e){alert('Error al exportar: '+e.message);}
 }
 
