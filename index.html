@@ -1053,8 +1053,8 @@ async function renderFin(){
 }
 
 function factDef(o){
+  if(o.facturaDefinitivaRecibida)return`<span class="badge b-approved">✓ ${fmtD(o.fechaFacturaDefinitiva)}</span>${o.numSoporte?`<span class="sub">N° ${o.numSoporte}</span>`:''}${o.enlaceSoporte?` <a href="${o.enlaceSoporte}" target="_blank" style="font-size:10.5px;color:var(--blue)">Ver</a>`:''} <button class="btn btn-sm" style="font-size:10px;padding:2px 6px" onclick="editFactDef('${o._id}')" title="Corregir"><i class="ti ti-pencil"></i></button>`;
   if(o.tipoSoporte!=='Pre-factura')return'<span class="muted" style="font-size:11px">N/A</span>';
-  if(o.facturaDefinitivaRecibida)return`<span class="badge b-approved">✓ ${fmtD(o.fechaFacturaDefinitiva)}</span>${o.enlaceSoporte?` <a href="${o.enlaceSoporte}" target="_blank" style="font-size:10.5px;color:var(--blue)">Ver</a>`:''} <button class="btn btn-sm" style="font-size:10px;padding:2px 6px" onclick="editFactDef('${o._id}')" title="Corregir"><i class="ti ti-pencil"></i></button>`;
   if(o.estado==='Pagada')return`<button class="btn btn-sm btn-success" onclick="editFactDef('${o._id}')"><i class="ti ti-file-check"></i> Registrar</button>`;
   return`<span class="badge b-prefac">Pend. pago</span>`;
 }
@@ -1214,6 +1214,7 @@ async function saveFactDef(aid){
       fechaFacturaDefinitiva:fecha,
       numSoporte:num,
       enlaceSoporte:link||o.enlaceSoporte,
+      tipoSoporte:'Factura',
       comentariosJson:JSON.stringify(coms)
     });
     document.getElementById('fin-factdef').innerHTML='';renderFin();
@@ -1226,7 +1227,7 @@ async function quitarFactDef(aid){
     const all=await atGet();const o=all.find(x=>x._id===aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:'Factura definitiva: registro retirado (se había marcado por error)',fecha:today()});
-    await atPatch(aid,{facturaDefinitivaRecibida:false,fechaFacturaDefinitiva:'',comentariosJson:JSON.stringify(coms)});
+    await atPatch(aid,{facturaDefinitivaRecibida:false,fechaFacturaDefinitiva:'',tipoSoporte:'Pre-factura',comentariosJson:JSON.stringify(coms)});
     document.getElementById('fin-factdef').innerHTML='';renderFin();
   }catch(e){alert('Error: '+e.message);document.getElementById('fdsav').style.display='none';}
 }
@@ -1839,6 +1840,7 @@ async function confirmarFacturaDef(rol, aid){
       fechaFacturaDefinitiva:fecha,
       numSoporte:num,
       enlaceSoporte:link||o.enlaceSoporte,
+      tipoSoporte:'Factura',
       comentariosJson:JSON.stringify(coms)
     });
     document.getElementById('form-fact-def-'+rol).remove();
