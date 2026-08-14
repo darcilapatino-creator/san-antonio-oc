@@ -324,6 +324,19 @@ const today=()=>new Date().toISOString().split('T')[0];
 const mesActual=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
 const mesPago=iso=>iso?iso.substring(0,7):'';
 const spin=msg=>`<div class="loading"><div class="spinner"></div>${msg||'Cargando...'}</div>`;
+// El campo "N° factura / documento" es solo numero/letras (y separadores comunes como - . # espacio),
+// nunca un enlace. Si detecta patron de URL, borra el campo y avisa; si no, filtra caracteres no permitidos.
+function pareceLink(v){return /https?:\/\/|www\.|\.(com|co|net|org)\b|drive\.google|docs\.google/i.test(v||'');}
+function filtrarNumFactura(el){
+  const v=el.value;
+  if(pareceLink(v)){
+    el.value='';
+    alert('El campo "N° factura / documento" es solo para el número de la factura (letras y números), no para enlaces.\nPega el enlace del documento en el campo "Enlace documento soporte".');
+    return;
+  }
+  const limpio=v.replace(/[^A-Za-z0-9#\-_.\s]/g,'');
+  if(limpio!==v)el.value=limpio;
+}
 
 function bdg(e){
   const m={'Elaborada':'b-pending','Pendiente aprobación Dir. Obra':'b-review','Pendiente aprobación Dir. Proyecto':'b-review','En proceso Finanzas':'b-finance','Por pagar':'b-pending','Pagada':'b-paid','Rechazada':'b-rejected','Anulada':'b-rejected'};
@@ -423,7 +436,7 @@ function buildCreador(rol){
         </div>
         <div class="grid-2">
           <div class="field-group"><label class="field-label">Enlace documento soporte *</label><input class="field-input" id="${rol}-slink" placeholder="https://drive.google.com/..."></div>
-          <div class="field-group"><label class="field-label">N° factura / documento</label><input class="field-input" id="${rol}-num-soporte" placeholder="Ej: FV-001, CC-2026-05..."></div>
+          <div class="field-group"><label class="field-label">N° factura / documento</label><input class="field-input" id="${rol}-num-soporte" placeholder="Ej: FV-001, CC-2026-05..." oninput="filtrarNumFactura(this)"></div>
         </div>
         <div id="${rol}-prefnote" style="display:none" class="soporte-box"><i class="ti ti-alert-triangle"></i><span><b>Pre-factura:</b> El proveedor emitirá la factura DIAN una vez realizado el pago.</span></div>
         <div class="grid-2" style="margin-top:12px">
@@ -599,6 +612,7 @@ async function guardarOC(rol){
   const prov=document.getElementById(`${rol}-prov`).value;
   const sop=document.getElementById(`${rol}-soporte`).value;
   if(!tipo||!cat||!prov||!sop){alert('Completa: Tipo, Categoría, Proveedor y Tipo de soporte');return}
+  if(pareceLink(document.getElementById(`${rol}-num-soporte`)?.value)){alert('El campo "N° factura / documento" no puede ser un enlace. Escribe el número de la factura y pega el enlace en "Enlace documento soporte".');return}
   const items=getItems(rol);
   const bruto=redondear2(items.reduce((s,i)=>s+i.vrBruto,0)),iva=redondear2(items.reduce((s,i)=>s+(i.iva||0),0));
   const slink=document.getElementById(`${rol}-slink`).value||'';
@@ -1187,7 +1201,7 @@ async function editFactDef(aid){
     <div class="card-title"><i class="ti ti-file-check"></i> ${yaRecibida?'Corregir':'Registrar'} factura definitiva DIAN — ${o.consecutivo}</div>
     ${yaRecibida?`<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Esta orden ya está marcada como recibida. Corrige el número/enlace/fecha con los datos reales, o usa "Quitar registro" si se marcó por error.</div>`:`<div class="alert alert-info"><i class="ti ti-info-circle"></i> Pega el enlace del documento (Drive, correo, etc.) de la factura definitiva ya emitida por el proveedor. No marques esto hasta tener el documento real en mano.</div>`}
     <div class="grid-2">
-      <div class="field-group"><label class="field-label">N° de factura DIAN *</label><input class="field-input" id="fd-num" value="${o.numSoporte||''}" placeholder="Ej: FE-0001234..."></div>
+      <div class="field-group"><label class="field-label">N° de factura DIAN *</label><input class="field-input" id="fd-num" value="${o.numSoporte||''}" placeholder="Ej: FE-0001234..." oninput="filtrarNumFactura(this)"></div>
       <div class="field-group"><label class="field-label">Fecha de la factura *</label><input class="field-input" type="date" id="fd-fecha" value="${o.fechaFacturaDefinitiva||o.fechaSoporte||today()}"></div>
     </div>
     <div class="field-group"><label class="field-label">Enlace a la factura definitiva</label><input class="field-input" id="fd-link" value="${o.enlaceSoporte||''}" placeholder="https://drive.google.com/..."></div>
@@ -1205,6 +1219,7 @@ async function saveFactDef(aid){
   const fecha=document.getElementById('fd-fecha').value;
   const link=document.getElementById('fd-link').value.trim();
   if(!num||!fecha){alert('Completa el número y la fecha de la factura.');return}
+  if(pareceLink(num)){alert('El "N° de factura DIAN" no puede ser un enlace. Escribe el número y pega el enlace en el campo de abajo.');return}
   document.getElementById('fdsav').style.display='flex';
   try{
     const all=await atGet();const o=all.find(x=>x._id===aid);
@@ -1806,7 +1821,7 @@ function mostrarFormFacturaDef(rol, aid){
     '<div class="card-title"><i class="ti ti-file-invoice"></i> Registrar factura definitiva DIAN</div>'+
     '<div class="alert alert-info" style="margin-bottom:12px"><i class="ti ti-info-circle"></i> Una vez registrada, la orden quedará completamente cerrada.</div>'+
     '<div class="grid-2">'+
-      '<div class="field-group"><label class="field-label">N° de factura DIAN *</label><input class="field-input" id="fd-num-'+rol+'" placeholder="Ej: FE-0001234..."></div>'+
+      '<div class="field-group"><label class="field-label">N° de factura DIAN *</label><input class="field-input" id="fd-num-'+rol+'" placeholder="Ej: FE-0001234..." oninput="filtrarNumFactura(this)"></div>'+
       '<div class="field-group"><label class="field-label">Fecha de la factura *</label><input class="field-input" type="date" id="fd-fecha-'+rol+'" value="'+today()+'"></div>'+
     '</div>'+
     '<div class="field-group"><label class="field-label">Enlace factura en Drive</label><input class="field-input" id="fd-link-'+rol+'" placeholder="https://drive.google.com/..."></div>'+
@@ -1831,6 +1846,7 @@ async function confirmarFacturaDef(rol, aid){
   const fecha=document.getElementById('fd-fecha-'+rol)?.value||'';
   const link=document.getElementById('fd-link-'+rol)?.value||'';
   if(!num||!fecha){alert('Completa el número y fecha de la factura');return;}
+  if(pareceLink(num)){alert('El "N° de factura DIAN" no puede ser un enlace. Escribe el número y pega el enlace en el campo de abajo.');return;}
   document.getElementById('fd-sav-'+rol).style.display='flex';
   try{
     const all=await atGet();const o=all.find(x=>x._id===aid);
