@@ -1054,6 +1054,7 @@ async function renderFin(){
 
 function factDef(o){
   if(o.facturaDefinitivaRecibida)return`<span class="badge b-approved">✓ ${fmtD(o.fechaFacturaDefinitiva)}</span>${o.numSoporte?`<span class="sub">N° ${o.numSoporte}</span>`:''}${o.enlaceSoporte?` <a href="${o.enlaceSoporte}" target="_blank" style="font-size:10.5px;color:var(--blue)">Ver</a>`:''} <button class="btn btn-sm" style="font-size:10px;padding:2px 6px" onclick="editFactDef('${o._id}')" title="Corregir"><i class="ti ti-pencil"></i></button>`;
+  if(o.tipoSoporte==='Factura')return`<span class="badge b-approved">✓ ${fmtD(o.fechaSoporte)}</span>${o.numSoporte?`<span class="sub">N° ${o.numSoporte}</span>`:'<span class="sub" style="color:var(--red)">Sin N° registrado</span>'}${o.enlaceSoporte?` <a href="${o.enlaceSoporte}" target="_blank" style="font-size:10.5px;color:var(--blue)">Ver</a>`:''} <button class="btn btn-sm" style="font-size:10px;padding:2px 6px" onclick="editFactDef('${o._id}')" title="Corregir"><i class="ti ti-pencil"></i></button>`;
   if(o.tipoSoporte!=='Pre-factura')return'<span class="muted" style="font-size:11px">N/A</span>';
   if(o.estado==='Pagada')return`<button class="btn btn-sm btn-success" onclick="editFactDef('${o._id}')"><i class="ti ti-file-check"></i> Registrar</button>`;
   return`<span class="badge b-prefac">Pend. pago</span>`;
@@ -1187,7 +1188,7 @@ async function editFactDef(aid){
     ${yaRecibida?`<div class="alert alert-warning"><i class="ti ti-alert-triangle"></i> Esta orden ya está marcada como recibida. Corrige el número/enlace/fecha con los datos reales, o usa "Quitar registro" si se marcó por error.</div>`:`<div class="alert alert-info"><i class="ti ti-info-circle"></i> Pega el enlace del documento (Drive, correo, etc.) de la factura definitiva ya emitida por el proveedor. No marques esto hasta tener el documento real en mano.</div>`}
     <div class="grid-2">
       <div class="field-group"><label class="field-label">N° de factura DIAN *</label><input class="field-input" id="fd-num" value="${o.numSoporte||''}" placeholder="Ej: FE-0001234..."></div>
-      <div class="field-group"><label class="field-label">Fecha de la factura *</label><input class="field-input" type="date" id="fd-fecha" value="${o.fechaFacturaDefinitiva||today()}"></div>
+      <div class="field-group"><label class="field-label">Fecha de la factura *</label><input class="field-input" type="date" id="fd-fecha" value="${o.fechaFacturaDefinitiva||o.fechaSoporte||today()}"></div>
     </div>
     <div class="field-group"><label class="field-label">Enlace a la factura definitiva</label><input class="field-input" id="fd-link" value="${o.enlaceSoporte||''}" placeholder="https://drive.google.com/..."></div>
     <div class="actions">
