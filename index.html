@@ -212,7 +212,15 @@ const CATS_SST=['Mano de Obra','Administrativo'];
 
 let currentUser=null,pinBuffer='',itemIdx=0,ocActual=null,ocGuardada=false;
 
-async function atGet(){
+// Cache en memoria de las Ordenes para no volver a pedir toda la tabla en cada clic.
+// Se reutiliza por AT_CACHE_MS; cualquier creacion/edicion (atCreate/atPatch) la invalida
+// de inmediato, asi que quien acaba de guardar algo siempre ve su propio cambio al toque.
+// Esto reduce mucho el consumo mensual de llamadas a la API de Airtable sin cambiar
+// el comportamiento visible de la app (los ~38 sitios que llaman atGet() no se tocan).
+let _atCache=null,_atCacheAt=0;
+const AT_CACHE_MS=20000;
+function atInvalidate(){_atCache=null;}
+async function atGetRaw(){
   let all=[],offset=null;
   do{
     const url=AT_URL+(offset?`?offset=${offset}`:'');
@@ -224,16 +232,24 @@ async function atGet(){
   }while(offset);
   return all;
 }
+async function atGet(force){
+  if(!force&&_atCache&&(Date.now()-_atCacheAt<AT_CACHE_MS))return _atCache;
+  _atCache=await atGetRaw();
+  _atCacheAt=Date.now();
+  return _atCache;
+}
 async function atCreate(fields){
   const r=await fetch(AT_URL,{method:'POST',headers:HDR,body:JSON.stringify({fields})});
   if(!r.ok){const e=await r.text();throw new Error(`Airtable error ${r.status}: ${e}`);}
   const d=await r.json();
+  atInvalidate();
   return{_id:d.id,...d.fields};
 }
 async function atPatch(id,fields){
   const r=await fetch(`${AT_URL}/${id}`,{method:'PATCH',headers:HDR,body:JSON.stringify({fields})});
   if(!r.ok){const e=await r.text();throw new Error(`Airtable error ${r.status}: ${e}`);}
   const d=await r.json();
+  atInvalidate();
   return{_id:d.id,...d.fields};
 }
 
@@ -827,15 +843,15 @@ async function solicitarDO(rol){
   }catch(e){alert('Error: '+e.message);}
 }
 
-async function renderDO(){
+async function renderDO(force){
   document.getElementById('do-contenido').innerHTML=spin('Cargando órdenes...');
   try{
-    const all=await atGet();
+    const all=await atGet(force);
     const pend=ordenarPorConsecutivo(all.filter(o=>o.estado==='Pendiente aprobación Dir. Obra'));
     const hist=ordenarPorConsecutivo(all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra'].includes(o.estado)),true);
     const pfp=all.filter(o=>o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida&&mesPago(o.fechaPago)<mesActual());
     document.getElementById('do-contenido').innerHTML=
-    '<div style="display:flex;gap:8px;margin-bottom:1rem"><button class="btn" onclick="renderDO()"><i class="ti ti-refresh"></i> Actualizar</button><button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button></div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:1rem"><button class="btn" onclick="renderDO(true)"><i class="ti ti-refresh"></i> Actualizar</button><button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button></div>'+
     prefAlerta(pfp)+
     `<div class="card">
       <div class="card-title"><i class="ti ti-clock"></i> Órdenes pendientes de aprobación (${pend.length})</div>
@@ -895,15 +911,15 @@ async function aprobDO(aid){
   }catch(e){alert('Error: '+e.message);document.getElementById('do-sav').style.display='none';}
 }
 
-async function renderDP(){
+async function renderDP(force){
   document.getElementById('dp-contenido').innerHTML=spin('Cargando...');
   try{
-    const all=await atGet();
+    const all=await atGet(force);
     const pend=ordenarPorConsecutivo(all.filter(o=>['Pendiente aprobación Dir. Proyecto','Pendiente aprobación Dir. Obra','Elaborada'].includes(o.estado)));
     const hist=ordenarPorConsecutivo(all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)),true);
     document.getElementById('dp-contenido').innerHTML=`
     <div style="display:flex;gap:8px;margin-bottom:1rem">
-      <button class="btn" onclick="renderDP()"><i class="ti ti-refresh"></i> Actualizar</button>
+      <button class="btn" onclick="renderDP(true)"><i class="ti ti-refresh"></i> Actualizar</button>
       <button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
     </div>
     <div class="card">
@@ -990,11 +1006,11 @@ async function anularOrden(aid,origen){
   }catch(e){alert('Error: '+e.message);document.getElementById('fin-anular-sav').style.display='none';}
 }
 
-async function renderFin(){
+async function renderFin(force){
   const mostrarTodas=document.getElementById('fin-vertodas')?.checked;
   document.getElementById('fin-contenido').innerHTML=spin('Cargando tabla de control...');
   try{
-    const all=await atGet();
+    const all=await atGet(force);
     // Auto-completar datos bancarios desde el maestro de Proveedores si la orden aun no los tiene
     const provs=await cargarProveedores();
     const pendientes=[];
@@ -1030,7 +1046,7 @@ async function renderFin(){
     <div style="display:flex;gap:10px;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn btn-excel" onclick="reportePagos()"><i class="ti ti-file-spreadsheet"></i> Generar reporte de pagos</button>
       <button class="btn btn-excel" onclick="exportarExcel()"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
-      <button class="btn" onclick="renderFin()"><i class="ti ti-refresh"></i> Actualizar</button>
+      <button class="btn" onclick="renderFin(true)"><i class="ti ti-refresh"></i> Actualizar</button>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:1rem;align-items:center">
       <div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>
@@ -1389,10 +1405,10 @@ async function reportePagos(){
   const w=window.open('','_blank');w.document.write(html);w.document.close();setTimeout(()=>w.print(),500);
 }
 
-async function renderCTH(){
+async function renderCTH(force){
   document.getElementById('cth-contenido').innerHTML=spin('Cargando...');
   try{
-    const all=await atGet();
+    const all=await atGet(force);
     const todas=ordenarPorConsecutivo(all.filter(o=>o.estado!=='Elaborada'),true);
     const pag=all.filter(o=>o.estado==='Pagada');
     const xp=all.filter(o=>o.estado==='Por pagar');
@@ -1406,7 +1422,7 @@ async function renderCTH(){
       <div class="stat-box"><div class="stat-label">Pagadas</div><div class="stat-val" style="color:var(--green)">${pag.length}</div></div>
       <div class="stat-box"><div class="stat-label">Pre-fact. sin factura</div><div class="stat-val" style="color:${pfp.length?'#856404':'var(--green)'}">${pfp.length}</div></div>
     </div>
-    <button class="btn" onclick="renderCTH()" style="margin-bottom:1rem"><i class="ti ti-refresh"></i> Actualizar</button>
+    <button class="btn" onclick="renderCTH(true)" style="margin-bottom:1rem"><i class="ti ti-refresh"></i> Actualizar</button>
     <button class="btn btn-excel" onclick="exportarExcel()" style="margin-bottom:1rem;margin-left:8px"><i class="ti ti-file-spreadsheet"></i> Exportar Excel</button>
     <div style="display:flex;gap:8px;margin-bottom:1rem;align-items:center">
       <div style="position:relative;flex:1"><i class="ti ti-search" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px"></i>
