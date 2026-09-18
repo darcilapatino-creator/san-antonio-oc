@@ -238,6 +238,21 @@ async function atGet(force){
   _atCacheAt=Date.now();
   return _atCache;
 }
+// Trae UNA sola orden por id. Si el caché de atGet() esta vigente, la busca ahi
+// (0 llamadas a la API). Si no, pide solo ese registro (1 llamada fija, no crece
+// con el tamaño de la tabla — a diferencia de pedir todo con atGet() y luego
+// buscarla). La mayoria de pantallas de "ver/editar una orden" solo necesitan
+// esto, no la tabla completa.
+async function atGetOne(id){
+  if(_atCache&&(Date.now()-_atCacheAt<AT_CACHE_MS)){
+    const hit=_atCache.find(x=>x._id===id);
+    if(hit)return hit;
+  }
+  const r=await fetch(`${AT_URL}/${id}`,{headers:HDR});
+  if(!r.ok){const e=await r.text();throw new Error(`Airtable error ${r.status}: ${e}`);}
+  const d=await r.json();
+  return{_id:d.id,...d.fields};
+}
 async function atCreate(fields){
   const r=await fetch(AT_URL,{method:'POST',headers:HDR,body:JSON.stringify({fields})});
   if(!r.ok){const e=await r.text();throw new Error(`Airtable error ${r.status}: ${e}`);}
@@ -287,32 +302,6 @@ async function cargarProveedores(){
   }catch(e){console.error('Error cargando proveedores:',e);return[];}
 }
 
-// Busca en el maestro de Proveedores por NIT (preferido) o por nombre exacto
-function buscarProveedorBanco(provs,nombre,nit){
-  if(nit){
-    const m=provs.find(p=>(p['NIT']||'').trim()===String(nit).trim());
-    if(m)return m;
-  }
-  if(nombre){
-    const nlow=nombre.trim().toLowerCase();
-    return provs.find(p=>(p['Nombre']||'').trim().toLowerCase()===nlow)||null;
-  }
-  return null;
-}
-// Guarda/actualiza los datos bancarios en el maestro de Proveedores para que se reutilicen automaticamente
-async function guardarBancoProveedor(nombre,nit,entidad,tipoCuenta,numCuenta){
-  try{
-    const provs=await cargarProveedores();
-    const match=buscarProveedorBanco(provs,nombre,nit);
-    const fields={'Entidad bancaria':entidad,'Tipo de cuenta':tipoCuenta,'Número de cuenta':numCuenta};
-    if(match){
-      await atPatchProveedor(match._id,fields);
-    }else if(nombre){
-      await atCreateProveedor({...fields,'Nombre':nombre,'NIT':nit||''});
-    }
-    proveedoresCache=[];
-  }catch(e){console.error('Error guardando banco en proveedor maestro:',e);}
-}
 
 
 // Redondea a 2 decimales evitando residuos de punto flotante (ej. 2305697.3600000002 -> 2305697.36)
@@ -661,8 +650,7 @@ async function guardarOC(rol){
         totalBruto:bruto,iva,retefuente1:redondear2(bruto*.04),retefuente2:redondear2(bruto*.01),
         totalPagar:redondear2(bruto+iva-bruto*.04-bruto*.01),
         estado:'Elaborada',fechaCreacion:today(),creadoPor:rol,
-        comentariosJson:'[]',facturaDefinitivaRecibida:false,
-        entidadBancaria:'',tipoCuenta:'',numeroCuenta:''
+        comentariosJson:'[]',facturaDefinitivaRecibida:false
       };
       record=await atCreate(fields);
       ocActual=record;ocGuardada=true;
@@ -689,7 +677,7 @@ async function verDetalleResidente(rol,aid){
   document.getElementById(`${rol}-form`).style.display='none';
   document.getElementById(`${rol}-lista`).style.display='block';
   document.getElementById(`${rol}-lista-ct`).innerHTML=spin('Cargando...');
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   var _rol=rol,_aid=aid;
   var accionesDiv=document.createElement('div');accionesDiv.className='card';
   var accionesInner=document.createElement('div');accionesInner.className='actions';
@@ -747,7 +735,7 @@ async function verDetalleResidente(rol,aid){
 }
 
 async function editarOC(rol,aid){
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   ocActual=o;ocGuardada=true;
   document.getElementById(`${rol}-lista`).style.display='none';
   document.getElementById(`${rol}-form`).style.display='block';
@@ -788,7 +776,7 @@ async function editarOC(rol,aid){
 
 async function solDOdesdeVista(rol,aid){
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:RLBL[rol],accion:'Enviado a Director de Obra',fecha:today()});
     await atPatch(aid,{estado:'Pendiente aprobación Dir. Obra',comentariosJson:JSON.stringify(coms)});
@@ -797,7 +785,7 @@ async function solDOdesdeVista(rol,aid){
 }
 
 async function generarPDF(aid){
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   const items=JSON.parse(o.itemsJson||'[]');
   const html='<html><head><style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}.header{background:#1F2D3D;color:#fff;padding:12px 16px;margin-bottom:16px}.header h1{font-size:16px;margin:0}.header p{font-size:10px;color:#FFCC00;margin:2px 0 0}.consec{font-size:20px;font-weight:bold;color:#185FA5;text-align:center;padding:8px;border:2px solid #185FA5;margin-bottom:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}.field label{font-size:9px;color:#888;display:block}.field span{font-size:11px;font-weight:500}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:10px}th{background:#1F2D3D;color:#fff;padding:6px 8px;text-align:left}td{padding:5px 8px;border-bottom:1px solid #eee}.totales{margin-left:auto;width:280px;font-size:11px}.tot-row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee}.tot-final{display:flex;justify-content:space-between;padding:6px 0;font-weight:bold;font-size:13px}.aprobaciones{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}.aprov-box{border:1px solid #ddd;border-radius:6px;padding:10px;text-align:center}.aprov-box .titulo{font-size:9px;font-weight:bold;color:#888;text-transform:uppercase;margin-bottom:4px}.aprov-box .check{color:#3B6D11;font-size:13px;font-weight:bold}.aprov-box .fecha{font-size:10px;color:#555}</style></head><body>'+
     '<div class="header"><h1>CONSTRUCTHOR S.A.S — INGENIERÍA CIVIL</h1><p>Proyecto San Antonio · Sogamoso</p></div>'+
@@ -880,7 +868,7 @@ async function renderDO(force){
 
 async function verDO(aid){
   document.getElementById('do-contenido').innerHTML=spin('Cargando...');
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   document.getElementById('do-contenido').innerHTML=detalle(o);
   const cardDiv=document.createElement('div');cardDiv.className='card';
   const actDiv=document.createElement('div');actDiv.className='actions';
@@ -902,7 +890,7 @@ async function verDO(aid){
 async function aprobDO(aid){
   document.getElementById('do-sav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const com=document.getElementById('do-com')?.value||'';
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Director de Obra',accion:'Aprobado',comentario:com,fecha:today()});
@@ -944,7 +932,7 @@ async function renderDP(force){
 
 async function verDP(aid){
   document.getElementById('dp-contenido').innerHTML=spin('Cargando...');
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   document.getElementById('dp-contenido').innerHTML=detalle(o);
   const cardDiv=document.createElement('div');cardDiv.className='card';
   const actDiv=document.createElement('div');actDiv.className='actions';
@@ -966,7 +954,7 @@ async function verDP(aid){
 async function aprobDP(aid){
   document.getElementById('dp-sav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const com=document.getElementById('dp-com')?.value||'';
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Director de Proyecto',accion:'Aprobado',comentario:com,fecha:today()});
@@ -980,7 +968,7 @@ async function aprobDP(aid){
 async function rechazar(aid,quien,label){
   const com=document.getElementById(`${quien}-com`)?.value||'(sin comentario)';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:label,accion:'Rechazada',comentario:com,fecha:today()});
     await atPatch(aid,{estado:'Rechazada',comentariosJson:JSON.stringify(coms)});
@@ -996,7 +984,7 @@ async function anularOrden(aid,origen){
   if(!confirm('¿Confirmas anular la orden '+(document.getElementById('fin-anular-com')?.dataset.consec||'')+'? Esta acción no se puede deshacer desde el sistema.'))return;
   document.getElementById('fin-anular-sav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+    const o=await atGetOne(aid);if(!o)return;
     const estadoAnterior=o.estado;
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:'Anulada (estado previo: '+estadoAnterior+')',comentario:motivo,fecha:today()});
@@ -1011,31 +999,14 @@ async function renderFin(force){
   document.getElementById('fin-contenido').innerHTML=spin('Cargando tabla de control...');
   try{
     const all=await atGet(force);
-    // Auto-completar datos bancarios desde el maestro de Proveedores si la orden aun no los tiene
-    const provs=await cargarProveedores();
-    const pendientes=[];
-    all.forEach(o=>{
-      if(!o.entidadBancaria){
-        const m=buscarProveedorBanco(provs,o.proveedor,o.nit);
-        if(m&&m['Entidad bancaria']){
-          o.entidadBancaria=m['Entidad bancaria'];
-          o.tipoCuenta=m['Tipo de cuenta']||'';
-          o.numeroCuenta=m['Número de cuenta']||'';
-          pendientes.push(atPatch(o._id,{entidadBancaria:o.entidadBancaria,tipoCuenta:o.tipoCuenta,numeroCuenta:o.numeroCuenta}).catch(e=>console.error('Error auto-completando banco:',e)));
-        }
-      }
-    });
-    if(pendientes.length)await Promise.all(pendientes);
     const enP=all.filter(o=>o.estado==='En proceso Finanzas');
     const xPag=all.filter(o=>o.estado==='Por pagar');
     const pag=all.filter(o=>o.estado==='Pagada');
     const pfp=all.filter(o=>o.tipoSoporte==='Pre-factura'&&o.estado==='Pagada'&&!o.facturaDefinitivaRecibida&&mesPago(o.fechaPago)<mesActual());
     const saldo=xPag.reduce((s,o)=>s+(o.totalPagar||0),0);
-    const sinB=xPag.filter(o=>!o.entidadBancaria).length;
     const vis=ordenarPorConsecutivo(mostrarTodas?all:all.filter(o=>!['Elaborada','Pendiente aprobación Dir. Obra','Pendiente aprobación Dir. Proyecto'].includes(o.estado)));
     document.getElementById('fin-contenido').innerHTML=
     prefAlerta(pfp)+
-    (sinB?`<div class="prefac-alert"><div class="prefac-alert-title"><i class="ti ti-building-bank"></i> ${sinB} orden(es) sin datos bancarios</div></div>`:'')+
     `<div class="stat-grid">
       <div class="stat-box"><div class="stat-label">En proceso</div><div class="stat-val" style="color:#534AB7">${enP.length}</div></div>
       <div class="stat-box"><div class="stat-label">Por pagar</div><div class="stat-val" style="color:var(--orange)">${xPag.length}</div></div>
@@ -1056,7 +1027,7 @@ async function renderFin(force){
     <div class="card">
       <div class="card-title"><i class="ti ti-table"></i> Tabla de control</div>
       ${vis.length?`<div class="table-wrap"><table class="table-fin">
-        <thead><tr><th>Consecutivo</th><th>Proveedor</th><th>Bruto+IVA</th><th>Retenciones</th><th>Neto</th><th>Soporte</th><th>Aprobaciones</th><th>Banco</th><th>Estado</th><th>Pago</th><th>Fact.def.</th><th>Acción</th><th>Ver</th></tr></thead>
+        <thead><tr><th>Consecutivo</th><th>Proveedor</th><th>Bruto+IVA</th><th>Retenciones</th><th>Neto</th><th>Soporte</th><th>Aprobaciones</th><th>Estado</th><th>Pago</th><th>Fact.def.</th><th>Acción</th><th>Ver</th></tr></thead>
         <tbody>${vis.map(o=>`<tr>
           <td style="font-weight:600;color:var(--blue);font-family:var(--mono)">${o.consecutivo}</td>
           <td>${o.proveedor}<span class="sub">${RLBL[o.creadoPor]||o.creadoPor}${o.nit?' · '+o.nit:''}</span></td>
@@ -1065,7 +1036,6 @@ async function renderFin(force){
           <td style="font-weight:600">${fmt(o.totalPagar||0)}</td>
           <td>${o.tipoSoporte?`<span class="badge ${o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac'}">${o.tipoSoporte}</span>`:'—'}</td>
           <td>${o.aprobacionDOFecha?`<span class="badge b-approved">✓ D.Obra</span>`:'— D.Obra'}<span class="sub">${o.aprobacionDPFecha?`✓ D.Proy. ${fmtD(o.aprobacionDPFecha)}`:'— D.Proy.'}</span></td>
-          <td>${o.entidadBancaria?`<span style="font-size:10.5px">${o.entidadBancaria}<br>${o.tipoCuenta} ${o.numeroCuenta}</span>`:`<button class="btn btn-sm" style="font-size:10.5px" onclick="editBanco('${o._id}')"><i class="ti ti-pencil"></i> Agregar</button>`}</td>
           <td>${bdg(o.estado)}</td>
           <td>${o.fechaPago?fmtD(o.fechaPago):'—'}${o.valorPagado?`<span class="sub">${fmt(o.valorPagado)}</span>`:''}${o.sociedadPago?`<span class="sub" style="font-weight:600;color:${o.sociedadPago==='HABI+TAD'?'var(--blue)':'#8B5CF6'}">${o.sociedadPago} <a href="#" onclick="editSociedadPago('${o._id}');return false;" title="Corregir"><i class="ti ti-pencil" style="font-size:10px"></i></a></span>`:(o.estado==='Pagada'?`<span class="sub"><a href="#" onclick="editSociedadPago('${o._id}');return false;" style="color:var(--orange)">+ Sociedad</a></span>`:'')}</td>
           <td>${factDef(o)}</td>
@@ -1097,7 +1067,7 @@ function accionFin(o){
   return'—';
 }
 async function procFin(aid){
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   const bruto=o.totalBruto||0;const iva=o.iva||0;
   const ret1Sug=Math.round(bruto*0.04);
   const ret2Sug=Math.round(bruto*0.01);
@@ -1162,7 +1132,7 @@ async function confirmarProcFin(aid, bruto, iva){
   const neto=redondear2((bruto+iva)-ret1-ret2);
   document.getElementById('pf-sav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:'Procesado — Por pagar. Ret1: '+fmt(ret1)+' Ret2: '+fmt(ret2),fecha:today()});
     await atPatch(aid,{
@@ -1177,40 +1147,8 @@ async function confirmarProcFin(aid, bruto, iva){
     renderFin();
   }catch(e){alert('Error: '+e.message);document.getElementById('pf-sav').style.display='none';}
 }
-function editBanco(aid){
-  document.getElementById('fin-banco').innerHTML=`
-  <div class="card" style="border:2px solid var(--blue)">
-    <div class="card-title"><i class="ti ti-building-bank"></i> Datos bancarios del proveedor</div>
-    <div class="alert alert-info"><i class="ti ti-info-circle"></i> Consulta la certificación bancaria adjunta.</div>
-    <div class="grid-3">
-      <div class="field-group"><label class="field-label">Entidad bancaria *</label><input class="field-input" id="be" placeholder="Ej: Davivienda, BBVA"></div>
-      <div class="field-group"><label class="field-label">Tipo de cuenta *</label>
-        <select class="field-input" id="bt"><option value="">Seleccionar</option><option>Ahorros</option><option>Corriente</option></select></div>
-      <div class="field-group"><label class="field-label">Número de cuenta *</label><input class="field-input" id="bn" placeholder="No. cuenta"></div>
-    </div>
-    <div class="actions">
-      <button class="btn btn-success" onclick="saveBanco('${aid}')"><i class="ti ti-check"></i> Guardar</button>
-      <button class="btn" onclick="document.getElementById('fin-banco').innerHTML=''">Cancelar</button>
-    </div>
-    <div id="bsav" style="display:none" class="loading"><div class="spinner"></div> Guardando...</div>
-  </div>`;
-  document.getElementById('fin-banco').scrollIntoView({behavior:'smooth'});
-}
-async function saveBanco(aid){
-  const e=document.getElementById('be').value,t=document.getElementById('bt').value,n=document.getElementById('bn').value;
-  if(!e||!t||!n){alert('Completa todos los datos bancarios');return}
-  document.getElementById('bsav').style.display='flex';
-  try{
-    await atPatch(aid,{entidadBancaria:e,tipoCuenta:t,numeroCuenta:n});
-    // Alimenta el maestro de Proveedores para que las proximas ordenes de este proveedor tomen el dato automaticamente
-    const all=await atGet();const o=all.find(x=>x._id===aid);
-    if(o)await guardarBancoProveedor(o.proveedor,o.nit,e,t,n);
-    document.getElementById('fin-banco').innerHTML='';renderFin();
-  }
-  catch(err){alert('Error: '+err.message);document.getElementById('bsav').style.display='none';}
-}
 async function editFactDef(aid){
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   const yaRecibida=o.facturaDefinitivaRecibida;
   document.getElementById('fin-factdef').innerHTML=`
   <div class="card" style="border:2px solid var(--blue)">
@@ -1238,7 +1176,7 @@ async function saveFactDef(aid){
   if(pareceLink(num)){alert('El "N° de factura DIAN" no puede ser un enlace. Escribe el número y pega el enlace en el campo de abajo.');return}
   document.getElementById('fdsav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:(o.facturaDefinitivaRecibida?'Factura definitiva corregida':'Factura definitiva DIAN registrada')+' — N° '+num,fecha:today()});
     await atPatch(aid,{
@@ -1256,7 +1194,7 @@ async function quitarFactDef(aid){
   if(!confirm('¿Confirmas quitar el registro de factura definitiva? Quedará pendiente de nuevo (el documento y número que ya tenía la orden NO se borran).'))return;
   document.getElementById('fdsav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:'Factura definitiva: registro retirado (se había marcado por error)',fecha:today()});
     await atPatch(aid,{facturaDefinitivaRecibida:false,fechaFacturaDefinitiva:'',tipoSoporte:'Pre-factura',comentariosJson:JSON.stringify(coms)});
@@ -1264,7 +1202,7 @@ async function quitarFactDef(aid){
   }catch(e){alert('Error: '+e.message);document.getElementById('fdsav').style.display='none';}
 }
 async function regPago(aid){
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   document.getElementById('fin-pago').innerHTML=`
   <div class="card" style="border:2px solid var(--blue)">
     <div class="card-title"><i class="ti ti-cash"></i> Registrar pago — ${o.consecutivo}</div>
@@ -1297,7 +1235,7 @@ async function confPago(aid){
   if(!soc){alert('Selecciona qué sociedad realizó el pago (HABI+TAD o CONSTRUCTHOR)');return}
   document.getElementById('psav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:`Pago registrado — ${fmt(valor)} · Pagó ${soc}`,fecha});
     await atPatch(aid,{estado:'Pagada',fechaPago:fecha,valorPagado:valor,sociedadPago:soc,referenciaPago:ref,comprobante:comp||'',comentariosJson:JSON.stringify(coms)});
@@ -1306,7 +1244,7 @@ async function confPago(aid){
 }
 // Permite a Finanzas corregir bruto, IVA o retenciones de una orden ya aprobada (ej. error de digitación del residente, o error propio en retenciones)
 async function abrirCorregirValores(aid){
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   const bruto=o.totalBruto||0,iva=o.iva||0,ret1=o.retefuente1||0,ret2=o.retefuente2||0;
   document.getElementById('fin-corr').innerHTML=`
   <div class="card" style="border:2px solid var(--dark)">
@@ -1347,11 +1285,11 @@ async function guardarCorregirValores(aid){
   const motivo=document.getElementById('cv-motivo').value.trim();
   if(!motivo){alert('Escribe el motivo de la corrección antes de guardar.');return}
   const neto=redondear2(bruto+iva-ret1-ret2);
-  const all0=await atGet();const o0=all0.find(x=>x._id===aid);
+  const o0=await atGetOne(aid);
   if(o0&&o0.estado==='Pagada'&&!confirm('Esta orden ya está PAGADA. ¿Confirmas que solo estás corrigiendo un error de digitación en el registro y no el valor realmente transferido?'))return;
   document.getElementById('cvsav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=o0;
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:`Valores corregidos — Bruto: ${fmt(bruto)} · IVA: ${fmt(iva)} · Ret1: ${fmt(ret1)} · Ret2: ${fmt(ret2)} · Neto: ${fmt(neto)}`,comentario:motivo,fecha:today()});
     await atPatch(aid,{totalBruto:bruto,iva:iva,retefuente1:ret1,retefuente2:ret2,totalPagar:neto,comentariosJson:JSON.stringify(coms)});
@@ -1359,7 +1297,7 @@ async function guardarCorregirValores(aid){
   }catch(e){alert('Error: '+e.message);document.getElementById('cvsav').style.display='none';}
 }
 async function editSociedadPago(aid){
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   document.getElementById('fin-socpago').innerHTML=`
   <div class="card" style="border:2px solid var(--blue)">
     <div class="card-title"><i class="ti ti-building-bank"></i> Sociedad que pagó — ${o.consecutivo}</div>
@@ -1383,7 +1321,7 @@ async function saveSociedadPago(aid){
   if(!soc){alert('Selecciona una sociedad.');return}
   document.getElementById('spsav').style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:'Finanzas',accion:`Sociedad de pago ${o.sociedadPago?'corregida':'registrada retroactivamente'} — ${soc}`,fecha:today()});
     await atPatch(aid,{sociedadPago:soc,comentariosJson:JSON.stringify(coms)});
@@ -1398,9 +1336,9 @@ async function reportePagos(){
   let html=`<html><head><style>body{font-family:Arial,sans-serif;font-size:11px;margin:20px}h2{color:#1F2D3D;font-size:14px;margin-bottom:4px}.sub{color:#666;font-size:11px;margin-bottom:16px}table{width:100%;border-collapse:collapse;font-size:10px}th{background:#1F2D3D;color:#fff;padding:7px 8px;text-align:left}td{padding:6px 8px;border-bottom:.5px solid #ddd}tr:nth-child(even) td{background:#F9F9F9}.tr{font-weight:bold;background:#E6F1FB;border-top:2px solid #185FA5}.ret{color:#888}a{color:#185FA5;font-size:10px}</style></head><body>
   <h2>REPORTE DE PAGOS — PROYECTO SAN ANTONIO · SOGAMOSO</h2>
   <div class="sub">CONSTRUCTHOR S.A.S · ${fecha}</div>
-  <table><thead><tr><th>N. OC/OS</th><th>Fecha soporte</th><th>NIT</th><th>Razón Social</th><th>Tipo soporte</th><th>Bruto+IVA</th><th>Ret.1 (4%)</th><th>Ret.2 (1%)</th><th>VALOR A PAGAR</th><th>Aprobaciones</th><th>Entidad</th><th>Tipo cta.</th><th>N° cuenta</th><th>Documentos</th><th>Obs.</th></tr></thead><tbody>
-  ${xp.map(o=>`<tr><td><b>${o.consecutivo}</b></td><td>${fmtD(o.fechaEnvio)}</td><td>${o.nit||'—'}</td><td>${o.proveedor}</td><td><b>${o.tipoSoporte||'—'}</b></td><td>${fmt((o.totalBruto||0)+(o.iva||0))}</td><td class="ret">${fmt(o.retefuente1||0)}</td><td class="ret">${fmt(o.retefuente2||0)}</td><td><b>${fmt(o.totalPagar||0)}</b></td><td style="font-size:9px">✓ Dir.Obra ${fmtD(o.aprobacionDOFecha)}<br>✓ Dir.Proy. ${fmtD(o.aprobacionDPFecha)}</td><td>${o.entidadBancaria||'⚠ Sin datos'}</td><td>${o.tipoCuenta||'—'}</td><td>${o.numeroCuenta||'—'}</td><td style="font-size:9px">${o.enlaceSoporte?`<a href="${o.enlaceSoporte}">Soporte</a>`:'✗'} · ${o.enlaceRut?`<a href="${o.enlaceRut}">RUT</a>`:'✗'} · ${o.enlaceCertBancaria?`<a href="${o.enlaceCertBancaria}">Banco</a>`:'✗'}</td><td>${o.observaciones||''}</td></tr>`).join('')}
-  </tbody><tfoot><tr class="tr"><td colspan="8" style="text-align:right">TOTAL A PAGAR:</td><td><b>${fmt(xp.reduce((s,o)=>s+(o.totalPagar||0),0))}</b></td><td colspan="6"></td></tr></tfoot></table>
+  <table><thead><tr><th>N. OC/OS</th><th>Fecha soporte</th><th>NIT</th><th>Razón Social</th><th>Tipo soporte</th><th>Bruto+IVA</th><th>Ret.1 (4%)</th><th>Ret.2 (1%)</th><th>VALOR A PAGAR</th><th>Aprobaciones</th><th>Documentos</th><th>Obs.</th></tr></thead><tbody>
+  ${xp.map(o=>`<tr><td><b>${o.consecutivo}</b></td><td>${fmtD(o.fechaEnvio)}</td><td>${o.nit||'—'}</td><td>${o.proveedor}</td><td><b>${o.tipoSoporte||'—'}</b></td><td>${fmt((o.totalBruto||0)+(o.iva||0))}</td><td class="ret">${fmt(o.retefuente1||0)}</td><td class="ret">${fmt(o.retefuente2||0)}</td><td><b>${fmt(o.totalPagar||0)}</b></td><td style="font-size:9px">✓ Dir.Obra ${fmtD(o.aprobacionDOFecha)}<br>✓ Dir.Proy. ${fmtD(o.aprobacionDPFecha)}</td><td style="font-size:9px">${o.enlaceSoporte?`<a href="${o.enlaceSoporte}">Soporte</a>`:'✗'} · ${o.enlaceRut?`<a href="${o.enlaceRut}">RUT</a>`:'✗'} · ${o.enlaceCertBancaria?`<a href="${o.enlaceCertBancaria}">Banco</a>`:'✗'}</td><td>${o.observaciones||''}</td></tr>`).join('')}
+  </tbody><tfoot><tr class="tr"><td colspan="8" style="text-align:right">TOTAL A PAGAR:</td><td><b>${fmt(xp.reduce((s,o)=>s+(o.totalPagar||0),0))}</b></td><td colspan="3"></td></tr></tfoot></table>
   <div style="margin-top:16px;font-size:10px;color:#666">${xp.length} orden(es) · Ret.1: 4% · Ret.2: 1% sobre total bruto.</div></body></html>`;
   const w=window.open('','_blank');w.document.write(html);w.document.close();setTimeout(()=>w.print(),500);
 }
@@ -1442,7 +1380,6 @@ async function renderCTH(force){
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:10px">
         <span class="muted">Total bruto + IVA</span><span style="font-weight:600">${fmt((o.totalBruto||0)+(o.iva||0))}</span>
       </div>
-      ${o.entidadBancaria?`<div style="font-size:12px;color:var(--text2);margin-bottom:10px"><i class="ti ti-building-bank"></i> ${o.entidadBancaria} · ${o.tipoCuenta} ${o.numeroCuenta}</div>`:''}
       <div style="background:var(--gray1);border-radius:var(--radius-sm);padding:10px 14px;border:1px solid var(--gray2)">
         <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em">Verificación</div>
         <div class="check-row"><i class="ti ti-circle-check ck-ok"></i><span>Elaborada</span><span class="muted" style="margin-left:auto">${fmtD(o.fechaCreacion)}</span></div>
@@ -1517,7 +1454,7 @@ function filtrarCTH(){
 
 async function verDetalleFin(aid){
   document.getElementById('fin-contenido').innerHTML=spin('Cargando...');
-  const all=await atGet();const o=all.find(x=>x._id===aid);if(!o)return;
+  const o=await atGetOne(aid);if(!o)return;
   document.getElementById('fin-contenido').innerHTML=detalle(o)+
     '<div id="fin-banco"></div><div id="fin-factdef"></div><div id="fin-socpago"></div><div id="fin-corr"></div><div id="fin-pago"></div>';
   const cardDiv=document.createElement('div');cardDiv.className='card';
@@ -1789,10 +1726,6 @@ async function seleccionarProveedor(rol,pid){
     const bancoTag=document.getElementById(rol+'-banco-tag');
     if(bancoTag)bancoTag.style.display=p['Enlace certificacion']?'block':'none';
   }
-  // Fill datos bancarios
-  const ebEl=document.getElementById(rol+'-entidad-bancaria');if(ebEl)ebEl.value=p['Entidad bancaria']||'';
-  const tcEl=document.getElementById(rol+'-tipo-cuenta');if(tcEl)tcEl.value=p['Tipo de cuenta']||'';
-  const ncEl=document.getElementById(rol+'-num-cuenta');if(ncEl)ncEl.value=p['Número de cuenta']||'';
   // Store provider id for later update
   window[rol+'_prov_id']=pid;
 }
@@ -1865,7 +1798,7 @@ async function confirmarFacturaDef(rol, aid){
   if(pareceLink(num)){alert('El "N° de factura DIAN" no puede ser un enlace. Escribe el número y pega el enlace en el campo de abajo.');return;}
   document.getElementById('fd-sav-'+rol).style.display='flex';
   try{
-    const all=await atGet();const o=all.find(x=>x._id===aid);
+    const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
     coms.push({quien:RLBL[rol],accion:'Factura definitiva DIAN registrada — N° '+num,fecha:today()});
     await atPatch(aid,{
