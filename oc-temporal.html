@@ -656,7 +656,7 @@ async function guardarOC(rol){
         totalBruto:bruto,iva,retefuente1:redondear2(bruto*.04),retefuente2:redondear2(bruto*.01),
         totalPagar:redondear2(bruto+iva-bruto*.04-bruto*.01),
         estado:'Elaborada',fechaCreacion:today(),creadoPor:rol,
-        comentariosJson:'[]',facturaDefinitivaRecibida:false
+        comentariosJson:'[]',facturaDefinitivaRecibida:false,otrosDescuentos:0
       };
       record=await atCreate(fields);
       ocActual=record;ocGuardada=true;
@@ -812,6 +812,7 @@ async function generarPDF(aid){
     '<div class="tot-row"><span>IVA 19%</span><span>'+fmt(o.iva)+'</span></div>'+
     '<div class="tot-row"><span>Retefuente 1 (4%)</span><span>'+fmt(o.retefuente1||0)+'</span></div>'+
     '<div class="tot-row"><span>Retefuente 2 (1%)</span><span>'+fmt(o.retefuente2||0)+'</span></div>'+
+    (o.otrosDescuentos?'<div class="tot-row"><span>Otros descuentos</span><span>'+fmt(o.otrosDescuentos)+'</span></div>':'')+
     '<div class="tot-final"><span>TOTAL A PAGAR</span><span style="color:#185FA5">'+fmt(o.totalPagar)+'</span></div>'+
     '</div></div>'+
     (o.observaciones?'<p style="margin-top:8px;font-size:10px;color:#555"><b>Observaciones:</b> '+o.observaciones+'</p>':'')+
@@ -1038,7 +1039,7 @@ async function renderFin(force){
           <td style="font-weight:600;color:var(--blue);font-family:var(--mono)">${o.consecutivo}</td>
           <td>${o.proveedor}<span class="sub">${RLBL[o.creadoPor]||o.creadoPor}${o.nit?' · '+o.nit:''}</span></td>
           <td>${fmt((o.totalBruto||0)+(o.iva||0))}</td>
-          <td style="color:var(--text3)">R1 ${fmt(o.retefuente1||0)}<span class="sub">R2 ${fmt(o.retefuente2||0)}</span></td>
+          <td style="color:var(--text3)">R1 ${fmt(o.retefuente1||0)}<span class="sub">R2 ${fmt(o.retefuente2||0)}${o.otrosDescuentos?' · Desc '+fmt(o.otrosDescuentos):''}</span></td>
           <td style="font-weight:600">${fmt(o.totalPagar||0)}</td>
           <td>${o.tipoSoporte?`<span class="badge ${o.tipoSoporte==='Pre-factura'?'b-prefac':'b-fac'}">${o.tipoSoporte}</span>`:'—'}</td>
           <td>${o.aprobacionDOFecha?`<span class="badge b-approved">✓ D.Obra</span>`:'— D.Obra'}<span class="sub">${o.aprobacionDPFecha?`✓ D.Proy. ${fmtD(o.aprobacionDPFecha)}`:'— D.Proy.'}</span></td>
@@ -1089,12 +1090,14 @@ async function procFin(aid){
   al.innerHTML='<i class="ti ti-info-circle"></i> Verifica y ajusta las retenciones. Deja en 0 si no aplican.';
   card.appendChild(al);
   // Retenciones grid
-  const grid=document.createElement('div');grid.className='grid-2';
+  const grid=document.createElement('div');grid.className='grid-3';
   grid.innerHTML=
     '<div class="field-group"><label class="field-label">Retefuente 1 — Renta</label>'+
     '<input class="field-input" type="number" id="pf-ret1" value="'+ret1Sug+'"></div>'+
     '<div class="field-group"><label class="field-label">Retefuente 2 — ICA</label>'+
-    '<input class="field-input" type="number" id="pf-ret2" value="'+ret2Sug+'"></div>';
+    '<input class="field-input" type="number" id="pf-ret2" value="'+ret2Sug+'"></div>'+
+    '<div class="field-group"><label class="field-label">Otros descuentos</label>'+
+    '<input class="field-input" type="number" id="pf-desc" value="0"></div>';
   card.appendChild(grid);
   // Totales summary
   const resumen=document.createElement('div');
@@ -1103,17 +1106,20 @@ async function procFin(aid){
     '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span class="muted">Total bruto + IVA</span><span>'+fmt(bruto+iva)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span class="muted">Retefuente 1</span><span id="pf-ret1-fmt">'+fmt(ret1Sug)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span class="muted">Retefuente 2</span><span id="pf-ret2-fmt">'+fmt(ret2Sug)+'</span></div>'+
+    '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span class="muted">Otros descuentos</span><span id="pf-desc-fmt">'+fmt(0)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;padding:6px 0;font-weight:600;font-size:15px;border-top:1px solid var(--gray3)"><span>Neto a pagar</span><span id="pf-neto" style="color:var(--blue)">'+fmt(bruto+iva-ret1Sug-ret2Sug)+'</span></div>';
   card.appendChild(resumen);
   // Live calc
-  ['pf-ret1','pf-ret2'].forEach(function(id){
+  ['pf-ret1','pf-ret2','pf-desc'].forEach(function(id){
     const inp=grid.querySelector('#'+id);
     if(inp)inp.addEventListener('input',function(){
       const r1=parseFloat(document.getElementById('pf-ret1').value)||0;
       const r2=parseFloat(document.getElementById('pf-ret2').value)||0;
+      const d=parseFloat(document.getElementById('pf-desc').value)||0;
       document.getElementById('pf-ret1-fmt').textContent=fmt(r1);
       document.getElementById('pf-ret2-fmt').textContent=fmt(r2);
-      document.getElementById('pf-neto').textContent=fmt(bruto+iva-r1-r2);
+      document.getElementById('pf-desc-fmt').textContent=fmt(d);
+      document.getElementById('pf-neto').textContent=fmt(bruto+iva-r1-r2-d);
     });
   });
   // Actions
@@ -1135,17 +1141,19 @@ async function procFin(aid){
 async function confirmarProcFin(aid, bruto, iva){
   const ret1=redondear2(parseFloat(document.getElementById('pf-ret1')?.value)||0);
   const ret2=redondear2(parseFloat(document.getElementById('pf-ret2')?.value)||0);
-  const neto=redondear2((bruto+iva)-ret1-ret2);
+  const desc=redondear2(parseFloat(document.getElementById('pf-desc')?.value)||0);
+  const neto=redondear2((bruto+iva)-ret1-ret2-desc);
   document.getElementById('pf-sav').style.display='flex';
   try{
     const o=await atGetOne(aid);
     const coms=JSON.parse(o.comentariosJson||'[]');
-    coms.push({quien:'Finanzas',accion:'Procesado — Por pagar. Ret1: '+fmt(ret1)+' Ret2: '+fmt(ret2),fecha:today()});
+    coms.push({quien:'Finanzas',accion:'Procesado — Por pagar. Ret1: '+fmt(ret1)+' Ret2: '+fmt(ret2)+(desc?' Otros descuentos: '+fmt(desc):''),fecha:today()});
     await atPatch(aid,{
       estado:'Por pagar',
       registroFinanzasFecha:today(),
       retefuente1:ret1,
       retefuente2:ret2,
+      otrosDescuentos:desc,
       totalPagar:neto,
       comentariosJson:JSON.stringify(coms)
     });
@@ -1251,7 +1259,7 @@ async function confPago(aid){
 // Permite a Finanzas corregir bruto, IVA o retenciones de una orden ya aprobada (ej. error de digitación del residente, o error propio en retenciones)
 async function abrirCorregirValores(aid){
   const o=await atGetOne(aid);if(!o)return;
-  const bruto=o.totalBruto||0,iva=o.iva||0,ret1=o.retefuente1||0,ret2=o.retefuente2||0;
+  const bruto=o.totalBruto||0,iva=o.iva||0,ret1=o.retefuente1||0,ret2=o.retefuente2||0,desc=o.otrosDescuentos||0;
   document.getElementById('fin-corr').innerHTML=`
   <div class="card" style="border:2px solid var(--dark)">
     <div class="card-title"><i class="ti ti-edit"></i> Corregir valores — ${o.consecutivo}</div>
@@ -1261,9 +1269,10 @@ async function abrirCorregirValores(aid){
       <div class="field-group"><label class="field-label">IVA *</label><input class="field-input" type="number" id="cv-iva" value="${iva}"></div>
       <div class="field-group"><label class="field-label">Retefuente 1</label><input class="field-input" type="number" id="cv-ret1" value="${ret1}"></div>
       <div class="field-group"><label class="field-label">Retefuente 2</label><input class="field-input" type="number" id="cv-ret2" value="${ret2}"></div>
+      <div class="field-group"><label class="field-label">Otros descuentos</label><input class="field-input" type="number" id="cv-desc" value="${desc}"></div>
     </div>
     <div style="background:var(--gray1);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;font-weight:600;font-size:15px">
-      <span>Neto a pagar</span><span id="cv-neto" style="color:var(--blue)">${fmt(bruto+iva-ret1-ret2)}</span>
+      <span>Neto a pagar</span><span id="cv-neto" style="color:var(--blue)">${fmt(bruto+iva-ret1-ret2-desc)}</span>
     </div>
     <div class="field-group"><label class="field-label">Motivo de la corrección *</label><textarea class="field-input" id="cv-motivo" placeholder="Ej: Residente digitó $X en vez de $Y según factura recibida..."></textarea></div>
     <div class="actions">
@@ -1272,13 +1281,14 @@ async function abrirCorregirValores(aid){
     </div>
     <div id="cvsav" style="display:none" class="loading"><div class="spinner"></div> Guardando...</div>
   </div>`;
-  ['cv-bruto','cv-iva','cv-ret1','cv-ret2'].forEach(function(id){
+  ['cv-bruto','cv-iva','cv-ret1','cv-ret2','cv-desc'].forEach(function(id){
     document.getElementById(id).addEventListener('input',function(){
       const b=parseFloat(document.getElementById('cv-bruto').value)||0;
       const i=parseFloat(document.getElementById('cv-iva').value)||0;
       const r1=parseFloat(document.getElementById('cv-ret1').value)||0;
       const r2=parseFloat(document.getElementById('cv-ret2').value)||0;
-      document.getElementById('cv-neto').textContent=fmt(b+i-r1-r2);
+      const d=parseFloat(document.getElementById('cv-desc').value)||0;
+      document.getElementById('cv-neto').textContent=fmt(b+i-r1-r2-d);
     });
   });
   document.getElementById('fin-corr').scrollIntoView({behavior:'smooth'});
@@ -1288,17 +1298,18 @@ async function guardarCorregirValores(aid){
   const iva=redondear2(parseFloat(document.getElementById('cv-iva').value)||0);
   const ret1=redondear2(parseFloat(document.getElementById('cv-ret1').value)||0);
   const ret2=redondear2(parseFloat(document.getElementById('cv-ret2').value)||0);
+  const desc=redondear2(parseFloat(document.getElementById('cv-desc').value)||0);
   const motivo=document.getElementById('cv-motivo').value.trim();
   if(!motivo){alert('Escribe el motivo de la corrección antes de guardar.');return}
-  const neto=redondear2(bruto+iva-ret1-ret2);
+  const neto=redondear2(bruto+iva-ret1-ret2-desc);
   const o0=await atGetOne(aid);
   if(o0&&o0.estado==='Pagada'&&!confirm('Esta orden ya está PAGADA. ¿Confirmas que solo estás corrigiendo un error de digitación en el registro y no el valor realmente transferido?'))return;
   document.getElementById('cvsav').style.display='flex';
   try{
     const o=o0;
     const coms=JSON.parse(o.comentariosJson||'[]');
-    coms.push({quien:'Finanzas',accion:`Valores corregidos — Bruto: ${fmt(bruto)} · IVA: ${fmt(iva)} · Ret1: ${fmt(ret1)} · Ret2: ${fmt(ret2)} · Neto: ${fmt(neto)}`,comentario:motivo,fecha:today()});
-    await atPatch(aid,{totalBruto:bruto,iva:iva,retefuente1:ret1,retefuente2:ret2,totalPagar:neto,comentariosJson:JSON.stringify(coms)});
+    coms.push({quien:'Finanzas',accion:`Valores corregidos — Bruto: ${fmt(bruto)} · IVA: ${fmt(iva)} · Ret1: ${fmt(ret1)} · Ret2: ${fmt(ret2)} · Otros descuentos: ${fmt(desc)} · Neto: ${fmt(neto)}`,comentario:motivo,fecha:today()});
+    await atPatch(aid,{totalBruto:bruto,iva:iva,retefuente1:ret1,retefuente2:ret2,otrosDescuentos:desc,totalPagar:neto,comentariosJson:JSON.stringify(coms)});
     document.getElementById('fin-corr').innerHTML='';renderFin();
   }catch(e){alert('Error: '+e.message);document.getElementById('cvsav').style.display='none';}
 }
@@ -1630,7 +1641,7 @@ async function exportarExcel(){
   try{
     const all=ordenarPorConsecutivo(await atGet());
     if(!all.length){alert('No hay órdenes para exportar.');return;}
-    const cols=['Consecutivo','Creado por','Tipo','Categoria','Proveedor','NIT','Fecha soporte','N° soporte','Tipo soporte','Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Aprobacion Dir. Obra','Aprobacion Dir. Proyecto','Registro Finanzas','Estado','Fecha pago','Valor pagado','Sociedad que pagó','Observaciones'];
+    const cols=['Consecutivo','Creado por','Tipo','Categoria','Proveedor','NIT','Fecha soporte','N° soporte','Tipo soporte','Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Otros descuentos','Neto a pagar','Aprobacion Dir. Obra','Aprobacion Dir. Proyecto','Registro Finanzas','Estado','Fecha pago','Valor pagado','Sociedad que pagó','Observaciones'];
     // Columnas que SIEMPRE deben quedar como texto (nunca como número), para que Excel no las corrompa
     // (NIT y N° de soporte pueden tener muchos dígitos, ceros a la izquierda, guiones o incluso enlaces)
     const colsTexto=new Set(['Consecutivo','NIT','N° soporte']);
@@ -1649,6 +1660,7 @@ async function exportarExcel(){
         o.iva||0,
         o.retefuente1||0,
         o.retefuente2||0,
+        o.otrosDescuentos||0,
         o.totalPagar||0,
         o.aprobacionDOFecha||'',
         o.aprobacionDPFecha||'',
@@ -1662,7 +1674,7 @@ async function exportarExcel(){
     });
     const ws=XLSX.utils.aoa_to_sheet([cols,...rows]);
     // Forzar tipo texto en las columnas sensibles, y formato numero con 2 decimales en las columnas de dinero
-    const colsDinero=new Set(['Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Neto a pagar','Valor pagado']);
+    const colsDinero=new Set(['Total bruto','IVA','Retefuente 1 (4%)','Retefuente 2 (1%)','Otros descuentos','Neto a pagar','Valor pagado']);
     cols.forEach(function(colName,ci){
       if(!colsTexto.has(colName)&&!colsDinero.has(colName))return;
       for(let ri=1;ri<=rows.length;ri++){
